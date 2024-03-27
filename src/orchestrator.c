@@ -1,4 +1,4 @@
-#include "orchestrator.h"
+#include "../includes/orchestrator.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,19 +13,169 @@
 #define FIFO_NAME "orchestrator_fifo"
 #define MAX_TASKS 100
 #define MAX_PROGS_PER_TASK 10
+#define COMMAND_LENGTH 4096
+
+// typedef struct {
+//     int id;
+//     pid_t pid;
+//     char commands[MAX_PROGS_PER_TASK][4096];
+//     int num_commands;
+//     time_t start_time;
+//     time_t end_time;
+//     int status;
+//     int total_time;
+// } Task;
 
 typedef struct {
     int id;
     pid_t pid;
-    char commands[MAX_PROGS_PER_TASK][4096];
+    char commands[MAX_PROGS_PER_TASK][COMMAND_LENGTH];
     int num_commands;
     time_t start_time;
+    time_t end_time;
+    char status; // 'W' for waiting, 'R' for running, 'C' for complete
+    int execution_time; // Real execution time
 } Task;
 
 Task tasks[MAX_TASKS];
 int num_tasks = 0;
 int parallel_tasks = 1; // Número padrão de tarefas em paralelo
 
+/**
+ * Função para logar as informações de uma tarefa
+ * @param task Ponteiro para a tarefa
+*/
+void log_task_info(Task *task) {
+    char filename[256];
+    snprintf(filename, sizeof(filename), "%d.out", task->id);
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        perror("Falha ao abrir arquivo de saída");
+        return;
+    }
+
+    char buffer[4096];
+    while (fgets(buffer, sizeof(buffer), file) != NULL) {
+        printf("%s", buffer);
+    }
+
+    fclose(file);
+}
+
+/**
+ * Função de tratamento do sinal SIGCHLD
+ * o SIGCHLD é enviado para o processo pai quando um processo filho termina e é usado para tratar processos "zumbis"
+*/
+// void handle_sigchld(int sig) {
+//     int status;
+//     pid_t pid;
+//     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+//         for (int i = 0; i < num_tasks; ++i) {
+//             if (tasks[i].pid == pid) {
+//                 time(&tasks[i].end_time);
+//                 tasks[i].total_time = difftime(tasks[i].end_time, tasks[i].start_time);
+//                 tasks[i].status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+//                 log_task_info(&tasks[i]);
+//                 tasks[i].pid = -1;
+//                 num_tasks--;
+//                 break;
+//             }
+//         }
+//     }
+// }
+
+/**
+ * Função para fazer o parsing dos comandos de uma tarefa
+ * @param commands Matriz de strings para armazenar os comandos
+ * @param command_string String com os comandos separados por "|"
+*/
+int parse_commands(char commands[MAX_PROGS_PER_TASK][COMMAND_LENGTH], const char* command_string){
+    int num_commands = 0;
+    char *token = strtok(command_string, "|");
+    while (token != NULL && num_commands < MAX_PROGS_PER_TASK) {
+        snprintf(commands[num_commands], sizeof(commands[num_commands]), "%s", token);
+        token = strtok(NULL, "|");
+        num_commands++;
+    }
+    return num_commands;
+}
+
+/**
+ * Função para executar um comando no shell
+ * @param command Comando a ser executado
+ * @return 0 se o comando foi executado com sucesso, -1 caso contrário
+*/
+int execute_command(const char *command) {
+    int pipefd[2];
+    if (pipe(pipefd) == -1) {
+        perror("Falha ao criar pipe");
+        return -1;
+    }
+
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("Falha ao criar processo filho");
+        return -1;
+    }
+
+    if (pid == 0) { // Processo filho
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        close(pipefd[1]);
+
+        execlp("/bin/sh", "sh", "-c", command, NULL);
+        perror("Falha ao executar o comando");
+        exit(EXIT_FAILURE);
+    } else {
+        close(pipefd[1]);
+        char buffer[4096];
+        while (read(pipefd[0], buffer, sizeof(buffer)) > 0) {
+            printf("%s", buffer);
+        }
+        close(pipefd[0]);
+    }
+
+    return 0;
+}
+
+/**
+ * Função para saber o status das tarefas
+*/
+void handle_status_request() {
+    printf("Tarefas em execução:\n");
+    for (int i = 0; i < num_tasks; ++i) {
+        if (tasks[i].pid != -1) {
+            printf("ID: %d | Comando: %s\n", tasks[i].id, tasks[i].commands[0]);
+        }
+    }
+}
+
+/**
+ * Função para atualizar as tarefas que terminaram
+*/
+void update_finished_tasks() {
+    for (int i = 0; i < num_tasks; ++i) {
+        if (tasks[i].pid != -1) {
+            int status;
+            pid_t pid = waitpid(tasks[i].pid, &status, WNOHANG);
+            if (pid > 0) {
+                time(&tasks[i].end_time);
+                tasks[i].execution_time = difftime(tasks[i].end_time, tasks[i].start_time);
+                tasks[i].status = 'C';
+                log_task_info(&tasks[i]);
+                tasks[i].pid = -1;
+                num_tasks--;
+            }
+        }
+    }
+}
+
+void start_task_if_possible();
+
+/**
+ * Função para executar uma tarefa
+ * @param commands Comandos a serem executados
+*/
 void execute_task(char *commands) {
     int task_index = -1;
     for (int i = 0; i < num_tasks; ++i) {
@@ -118,15 +268,6 @@ void execute_task(char *commands) {
 
     num_tasks++;
     printf("Tarefa com ID %d em execução\n", id);
-}
-
-void handle_status_request() {
-    printf("Tarefas em execução:\n");
-    for (int i = 0; i < num_tasks; ++i) {
-        if (tasks[i].pid != -1) {
-            printf("ID: %d | Comando: %s\n", tasks[i].id, tasks[i].command);
-        }
-    }
 }
 
 int orchestrator(int argc, char *argv[]) {

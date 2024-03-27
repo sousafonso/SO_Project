@@ -1,4 +1,4 @@
-#include "client.h"
+#include "../includes/client.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,14 +31,42 @@ int client(int argc, char *argv[]) {
         strncat(message, argv[i], sizeof(message) - strlen(message) - 1);
     }
 
+    // if (write(fd, message, strlen(message)) == -1) {
+    //     perror("Falha ao escrever no pipe nomeado");
+    //     exit(EXIT_FAILURE);
+    // }
+
+    // printf("Tarefa submetida com sucesso.\n");
+
+    // close(fd);
+    // exit(EXIT_SUCCESS);
+
     if (write(fd, message, strlen(message)) == -1) {
-        perror("Falha ao escrever no pipe nomeado");
+    perror("Falha ao escrever no pipe nomeado");
+    close(fd);
+    exit(EXIT_FAILURE);
+    }
+
+    close(fd);
+
+    // Aguardar resposta do servidor
+    fd = open(fifo, O_RDONLY);
+    if (fd == -1) {
+        perror("Falha ao abrir o pipe nomeado para leitura");
         exit(EXIT_FAILURE);
     }
 
-    printf("Tarefa submetida com sucesso.\n");
+    char response[1024];
+    int nbytes = read(fd, response, sizeof(response) - 1);
+    if (nbytes > 0) {
+        response[nbytes] = '\0'; // Garante que a string é terminada corretamente
+        printf("Resposta do servidor: %s\n", response);
+    } else {
+        perror("Falha ao ler resposta do servidor");
+    }
 
     close(fd);
     exit(EXIT_SUCCESS);
+
 }
 
