@@ -11,9 +11,6 @@
 #include <time.h>
 
 #define FIFO_NAME "orchestrator_fifo"
-#define MAX_TASKS 100
-#define MAX_PROGS_PER_TASK 10
-#define COMMAND_LENGTH 4096
 
 // typedef struct {
 //     int id;
@@ -26,20 +23,22 @@
 //     int total_time;
 // } Task;
 
-typedef struct {
-    int id;
-    pid_t pid;
-    char commands[MAX_PROGS_PER_TASK][COMMAND_LENGTH];
-    int num_commands;
-    time_t start_time;
-    time_t end_time;
-    char status; // 'W' for waiting, 'R' for running, 'C' for complete
-    int execution_time; // Real execution time
-} Task;
+// typedef struct {
+//     int id;
+//     pid_t pid;
+//     char commands[MAX_PROGS_PER_TASK][COMMAND_LENGTH];
+//     int num_commands;
+//     time_t start_time;
+//     time_t end_time;
+//     char status; // 'W' for waiting, 'R' for running, 'C' for complete
+//     int execution_time; // Real execution time
+// } Task;
 
 Task tasks[MAX_TASKS];
-int num_tasks = 0;
-int parallel_tasks = 1; // Número padrão de tarefas em paralelo
+int current_tasks = 0;
+// int num_tasks = 0;
+int next_task_id = 1;
+int parallel_tasks;
 
 /**
  * Função para logar as informações de uma tarefa
@@ -83,6 +82,29 @@ void log_task_info(Task *task) {
 //         }
 //     }
 // }
+
+// segunda versão **POR ANALISAR**
+// void update_task_status(pid_t pid, int status) {
+//     for (int i = 0; i < MAX_TASKS; i++) {
+//         if (tasks[i].pid == pid) {
+//             tasks[i].status = status;
+//             if (status == 'C') {
+//                 tasks[i].end_time = time(NULL);
+//                 tasks[i].execution_time = difftime(tasks[i].end_time, tasks[i].start_time);
+//             }
+//             break;
+//         }
+//     }
+// }
+
+void task_finished(int sig) {
+    pid_t pid;
+    int status;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        current_tasks--;
+        update_task_status(pid, 'C');
+    }
+}
 
 /**
  * Função para fazer o parsing dos comandos de uma tarefa
@@ -143,7 +165,7 @@ int execute_command(const char *command) {
 */
 void handle_status_request() {
     printf("Tarefas em execução:\n");
-    for (int i = 0; i < num_tasks; ++i) {
+    for (int i = 0; i < current_tasks; ++i) {
         if (tasks[i].pid != -1) {
             printf("ID: %d | Comando: %s\n", tasks[i].id, tasks[i].commands[0]);
         }
@@ -152,9 +174,10 @@ void handle_status_request() {
 
 /**
  * Função para atualizar as tarefas que terminaram
+ * PRIMEIRA VERSÃO **POR ANALISAR*
 */
 void update_finished_tasks() {
-    for (int i = 0; i < num_tasks; ++i) {
+    for (int i = 0; i < current_tasks; ++i) {
         if (tasks[i].pid != -1) {
             int status;
             pid_t pid = waitpid(tasks[i].pid, &status, WNOHANG);
@@ -164,13 +187,25 @@ void update_finished_tasks() {
                 tasks[i].status = 'C';
                 log_task_info(&tasks[i]);
                 tasks[i].pid = -1;
-                num_tasks--;
+                current_tasks--;
             }
         }
     }
 }
 
-void start_task_if_possible();
+void sort_tasks_by_estimated_duration(Task tasks[], int n) {
+    // Implementação simples de Bubble Sort para o exemplo
+    int i, j;
+    for (i = 0; i < n-1; i++)        
+        for (j = 0; j < n-i-1; j++)  
+            if (tasks[j].estimated_duration > tasks[j+1].estimated_duration) {
+                Task temp = tasks[j];
+                tasks[j] = tasks[j+1];
+                tasks[j+1] = temp;
+            }
+}
+
+// void start_task_if_possible();
 
 /**
  * Função para executar uma tarefa
@@ -178,14 +213,14 @@ void start_task_if_possible();
 */
 void execute_task(char *commands) {
     int task_index = -1;
-    for (int i = 0; i < num_tasks; ++i) {
+    for (int i = 0; i < current_tasks; ++i) {
         if (tasks[i].pid == -1) {
             task_index = i;
             break;
         }
     }
 
-    if (task_index == -1 || num_tasks >= MAX_TASKS) {
+    if (task_index == -1 || current_tasks >= MAX_TASKS) {
         fprintf(stderr, "Limite de tarefas atingido\n");
         return;
     }
@@ -266,7 +301,7 @@ void execute_task(char *commands) {
         exit(EXIT_SUCCESS);
     }
 
-    num_tasks++;
+    current_tasks++;
     printf("Tarefa com ID %d em execução\n", id);
 }
 
