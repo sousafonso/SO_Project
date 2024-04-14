@@ -9,6 +9,21 @@
 
 #define FIFO_NAME "orchestrator_fifo"
 
+void send_command_to_server(const char *command) {
+    int fd = open(FIFO_NAME, O_WRONLY);
+    if (fd == -1) {
+        perror("Falha ao abrir o pipe nomeado");
+        exit(EXIT_FAILURE);
+    }
+
+    if (write(fd, command, strlen(command)) == -1) {
+        perror("Falha ao escrever no pipe nomeado");
+        exit(EXIT_FAILURE);
+    }
+
+    close(fd);
+}
+
 int client(int argc, char *argv[]) {
     if (argc < 4 || (strcmp(argv[1], "-u") != 0 && strcmp(argv[1], "-p") != 0)) {
         fprintf(stderr, "Uso: %s [-u | -p] tempo_em_ms \"programa1 [args1] | programa2 [args2] | ...\"\n", argv[0]);
@@ -25,7 +40,7 @@ int client(int argc, char *argv[]) {
     }
 
     char message[4096];
-    snprintf(message, sizeof(message), "%s %s", argv[1], argv[2]);
+    snprintf(message, sizeof(message), "%s %s %s", argv[1], argv[2], argv[3]);
     for (int i = 3; i < argc; ++i) {
         strncat(message, " ", sizeof(message) - strlen(message) - 1);
         strncat(message, argv[i], sizeof(message) - strlen(message) - 1);

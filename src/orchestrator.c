@@ -11,6 +11,10 @@
 #include <time.h>
 
 #define FIFO_NAME "orchestrator_fifo"
+#define FIFO_PATH FIFO_PATH "/tmp/" FIFO_NAME
+#define MAX_TASKS 10
+#define MAX_PROGS_PER_TASK 10
+#define COMMAND_LENGTH 4096
 
 // typedef struct {
 //     int id;
@@ -65,46 +69,32 @@ void log_task_info(Task *task) {
  * Função de tratamento do sinal SIGCHLD
  * o SIGCHLD é enviado para o processo pai quando um processo filho termina e é usado para tratar processos "zumbis"
 */
-// void handle_sigchld(int sig) {
-//     int status;
-//     pid_t pid;
-//     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-//         for (int i = 0; i < num_tasks; ++i) {
-//             if (tasks[i].pid == pid) {
-//                 time(&tasks[i].end_time);
-//                 tasks[i].total_time = difftime(tasks[i].end_time, tasks[i].start_time);
-//                 tasks[i].status = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-//                 log_task_info(&tasks[i]);
-//                 tasks[i].pid = -1;
-//                 num_tasks--;
-//                 break;
-//             }
-//         }
-//     }
-// }
-
-// segunda versão **POR ANALISAR**
-// void update_task_status(pid_t pid, int status) {
-//     for (int i = 0; i < MAX_TASKS; i++) {
-//         if (tasks[i].pid == pid) {
-//             tasks[i].status = status;
-//             if (status == 'C') {
-//                 tasks[i].end_time = time(NULL);
-//                 tasks[i].execution_time = difftime(tasks[i].end_time, tasks[i].start_time);
-//             }
-//             break;
-//         }
-//     }
-// }
-
-void task_finished(int sig) {
+void handle_finished_task (int sig) {
     pid_t pid;
     int status;
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        current_tasks--;
-        update_task_status(pid, 'C');
+        for (int i = 0; i < current_tasks; ++i) {
+            if (tasks[i].pid == pid) {
+                time(&tasks[i].end_time);
+                tasks[i].execution_time = difftime(tasks[i].end_time, tasks[i].start_time);
+                tasks[i].status = 'C';
+                log_task_info(&tasks[i]);
+                tasks[i].pid = -1;
+                current_tasks--;
+                break;
+            }
+        }
     }
 }
+
+// void task_finished(int sig) {
+//     pid_t pid;
+//     int status;
+//     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+//         current_tasks--;
+//         update_task_status(pid, 'C');
+//     }
+// }
 
 /**
  * Função para fazer o parsing dos comandos de uma tarefa
@@ -176,22 +166,22 @@ void handle_status_request() {
  * Função para atualizar as tarefas que terminaram
  * PRIMEIRA VERSÃO **POR ANALISAR*
 */
-void update_finished_tasks() {
-    for (int i = 0; i < current_tasks; ++i) {
-        if (tasks[i].pid != -1) {
-            int status;
-            pid_t pid = waitpid(tasks[i].pid, &status, WNOHANG);
-            if (pid > 0) {
-                time(&tasks[i].end_time);
-                tasks[i].execution_time = difftime(tasks[i].end_time, tasks[i].start_time);
-                tasks[i].status = 'C';
-                log_task_info(&tasks[i]);
-                tasks[i].pid = -1;
-                current_tasks--;
-            }
-        }
-    }
-}
+// void update_finished_tasks() {
+//     for (int i = 0; i < current_tasks; ++i) {
+//         if (tasks[i].pid != -1) {
+//             int status;
+//             pid_t pid = waitpid(tasks[i].pid, &status, WNOHANG);
+//             if (pid > 0) {
+//                 time(&tasks[i].end_time);
+//                 tasks[i].execution_time = difftime(tasks[i].end_time, tasks[i].start_time);
+//                 tasks[i].status = 'C';
+//                 log_task_info(&tasks[i]);
+//                 tasks[i].pid = -1;
+//                 current_tasks--;
+//             }
+//         }
+//     }
+// }
 
 void sort_tasks_by_estimated_duration(Task tasks[], int n) {
     // Implementação simples de Bubble Sort para o exemplo
