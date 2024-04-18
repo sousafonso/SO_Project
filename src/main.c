@@ -1,5 +1,8 @@
-#include "client.c"
-#include "orchestrator.c"
+#include "../includes/client.h"
+#include "../includes/orchestrator.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
