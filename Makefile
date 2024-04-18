@@ -1,31 +1,28 @@
-CC=gcc
-CFLAGS=-I./include
-SRCDIR=src
-BINDIR=bin
-OBJDIR=obj
+CC = gcc
+CFLAGS = -Wall -g -Iinclude $(shell pkg-config --cflags glib-2.0)
+LDFLAGS = $(shell pkg-config --libs glib-2.0) -lm -lncurses
+OUTPUT_FOLDER = output
+PARALLEL_TASKS = 1
+SCHED_POLICY = fcfs
 
-SOURCES=$(wildcard $(SRCDIR)/**/*.c) $(wildcard $(SRCDIR)/*.c)
-OBJECTS=$(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SOURCES))
+all: server client
 
-all: directories server client
+server: bin/orchestrator
 
-directories:
-    @mkdir -p $(BINDIR)
-    @mkdir -p $(OBJDIR)/core
-    @mkdir -p $(OBJDIR)/networking
-    @mkdir -p $(OBJDIR)/logging
-    @mkdir -p $(OBJDIR)/utilities
-    @mkdir -p $(OBJDIR)/cli
+client: bin/client
 
-server: $(OBJECTS)
-    $(CC) $(CFLAGS) -o $(BINDIR)/server $(OBJDIR)/networking/server.o $(OBJDIR)/logging/logger.o $(OBJDIR)/utilities/utils.o $(OBJDIR)/core/task_manager.o $(OBJDIR)/server_main.o
+folders:
+    @mkdir -p src include obj bin $(OUTPUT_FOLDER)
 
-client: $(OBJECTS)
-    $(CC) $(CFLAGS) -o $(BINDIR)/client $(OBJDIR)/cli/cli.o $(OBJDIR)/networking/client.o $(OBJDIR)/utilities/utils.o $(OBJDIR)/cli_main.o
+bin/orchestrator: obj/orchestrator.o obj/main.o
+    $(CC) $^ -o $@ $(LDFLAGS)
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.c
+bin/client: obj/client.o obj/main.o
+    $(CC) $^ -o $@ $(LDFLAGS)
+
+obj/%.o: src/%.c include/%.h | folders
     $(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-    rm -rf $(BINDIR)/*
-    rm -rf $(OBJDIR)/*
+    rm -rf obj/* bin/* $(OUTPUT_FOLDER)/*
+
