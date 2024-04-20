@@ -24,7 +24,7 @@ void send_command_to_server(const char *command) {
     close(fd);
 }
 
-int client(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     if (argc < 4 || (strcmp(argv[1], "-u") != 0 && strcmp(argv[1], "-p") != 0)) {
         fprintf(stderr, "Uso: %s [-u | -p] tempo_em_ms \"programa1 [args1] | programa2 [args2] | ...\"\n", argv[0]);
         exit(EXIT_FAILURE);

@@ -295,7 +295,7 @@ void execute_task(char *commands) {
     printf("Tarefa com ID %d em execução\n", id);
 }
 
-int orchestrator(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     if (argc != 4) {
         fprintf(stderr, "Uso: %s output_folder parallel-tasks sched-policy\n", argv[0]);
         exit(EXIT_FAILURE);

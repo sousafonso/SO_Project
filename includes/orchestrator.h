@@ -19,13 +19,19 @@ typedef struct {
 
 void log_task_info(Task *task);
 
+void handle_finished_task (int sig);
+
 int parse_commands(char commands[MAX_PROGS_PER_TASK][COMMAND_LENGTH], const char* command_string); // ???
 
 void execute_task(char *commands);
 
+int execute_command(const char *command);
+
 void handle_status_request();
 
-int orchestrator(int argc, char *argv[]);
+void sort_tasks_by_estimated_duration(Task tasks[], int n);
+
+int main(int argc, char *argv[]);
 
 #endif /* ORCHESTRATOR_H */
 
