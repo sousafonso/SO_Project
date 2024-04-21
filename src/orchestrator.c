@@ -1,20 +1,8 @@
 #include "../includes/orchestrator.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <errno.h>
-#include <time.h>
 
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH FIFO_PATH "/tmp/" FIFO_NAME
-#define MAX_TASKS 10
-#define MAX_PROGS_PER_TASK 10
-#define COMMAND_LENGTH 4096
+
 
 // typedef struct {
 //     int id;
