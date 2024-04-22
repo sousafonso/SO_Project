@@ -5,11 +5,26 @@
 #define COMMAND_LENGTH 4096
 
 typedef struct {
-    char id[32];
+    char id[256];
+    char command[1024];
     int estimated_time;
-    char command[256];
-    char args[256];
 } Task;
+
+typedef struct {
+    Task task;
+    pid_t pid;
+    time_t start_time;
+} ActiveTask;
+
+typedef struct {
+    Task task;
+    time_t start_time;
+    time_t end_time;
+} CompletedTask;
+
+
+
+void main_loop ();
 
 /**
  * @brief Inicializa a comunicação com o cliente.
