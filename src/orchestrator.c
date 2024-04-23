@@ -24,6 +24,16 @@ ActiveTask active_tasks[MAX_TASKS];
 int active_count = 0;
 pid_t active_pids[MAX_TASKS];
 
+pthread_mutex_t lock;
+
+void add_active_task(ActiveTask active_task) {
+    pthread_mutex_lock(&lock);
+    active_tasks[active_count] = active_task;
+    active_pids[active_count] = active_task.pid;
+    active_count++;
+    pthread_mutex_unlock(&lock);
+}
+
 void setup_communication(const char *fifo_name) {
     if (mkfifo(fifo_name, 0666) == -1 && errno != EEXIST) {
         perror("mkfifo");
@@ -52,6 +62,15 @@ void save_state() {
 }
 
 void enqueue_task(Task task) {
+
+    // Obter o tempo atual
+    struct timeval now;
+    gettimeofday(&now, NULL);
+
+    // Armazenar o tempo de início da tarefa
+    strcpy(task_start_times[waiting_count].id, task.id);
+    task_start_times[waiting_count].start_time = now;
+
     if (waiting_count >= MAX_TASKS) {
         fprintf(stderr, "Fila de espera cheia. Tarefa %s não enfileirada.\n", task.id);
         return;
@@ -87,6 +106,23 @@ Task dequeue_task() {
 }
 
 void remove_active_task(int index) {
+    // Obter o tempo atual
+    struct timeval now;
+    gettimeofday(&now, NULL);
+
+    // Calcular o tempo de execução da tarefa
+    struct timeval start_time = task_start_times[index].start_time;
+    long execution_time = (now.tv_sec - start_time.tv_sec) * 1000 + (now.tv_usec - start_time.tv_usec) / 1000;
+
+    // Registrar a tarefa em um arquivo
+    FILE *file = fopen("task_log.txt", "a");
+    if (file == NULL) {
+        perror("fopen");
+        return;
+    }
+    fprintf(file, "Task ID: %s, Execution time: %ld ms\n", active_tasks[index].task.id, execution_time);
+    fclose(file);
+
     if (index < active_count - 1) {
         memmove(&active_tasks[index], &active_tasks[index + 1], (active_count - index - 1) * sizeof(Task));
         memmove(&active_pids[index], &active_pids[index + 1], (active_count - index - 1) * sizeof(pid_t));
@@ -95,54 +131,30 @@ void remove_active_task(int index) {
     save_state();
 }
 
-void execute_task(Task task) {
-    if (active_count >= MAX_TASKS) {
-        fprintf(stderr, "Número máximo de tarefas atingido. Tarefa enfileirada.\n");
-        enqueue_task(task);
-        return;
-    }
-
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("fork");
-        return;
-    }
-
-    if (pid == 0) {
-        // Child process
-        char filename[256];
-        snprintf(filename, sizeof(filename), "%s.log", task.id);
-
-        int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (fd < 0) {
-            perror("open");
-            exit(EXIT_FAILURE);
+void execute_tasks() {
+    while (1) {
+        // Verificar se algum processo filho terminou
+        for (int i = 0; i < active_count; i++) {
+            int status;
+            pid_t pid = waitpid(active_pids[i], &status, WNOHANG);
+            if (pid == -1) {
+                perror("waitpid");
+                return;
+            } else if (pid == active_pids[i]) {
+                // O processo filho terminou, remover a tarefa correspondente
+                remove_active_task(i);
+                break;
+            }
         }
 
-        if (dup2(fd, STDOUT_FILENO) < 0 || dup2(fd, STDERR_FILENO) < 0) {
-            perror("dup2");
-            exit(EXIT_FAILURE);
+        // Se houver tarefas na fila de espera, iniciar a próxima tarefa
+        if (waiting_count > 0) {
+            Task task = dequeue_task();
+            execute_task(task);
         }
 
-        // Parse command into arguments
-        char *args[1024];
-        int i = 0;
-        args[i] = strtok(task.command, " ");
-        while (args[i] != NULL) {
-            args[++i] = strtok(NULL, " ");
-        }
-
-        execvp(args[0], args);
-        perror("execvp");
-        exit(EXIT_FAILURE);
-    } else {
-        active_tasks[active_count++] = (ActiveTask){
-            .pid = pid,
-            .task = task,
-            .start_time = time(NULL)  // Set start_time to the current time
-        };
-        // Notify the user about the task ID
-        printf("Tarefa iniciada. Identificador da tarefa: %s\n", task.id);
+        // Dormir por um curto período de tempo para evitar uso excessivo de CPU
+        usleep(1000);
     }
 }
 

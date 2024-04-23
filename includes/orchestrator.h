@@ -6,6 +6,14 @@
 #include <time.h>
 #include <sys/types.h>
 
+// Estrutura para armazenar o tempo de início de uma tarefa
+struct TaskStartTime {
+    char id[100];
+    struct timeval start_time;
+};
+
+struct TaskStartTime task_start_times[MAX_TASKS];
+
 typedef struct {
     char id[256];
     char command[1024];
@@ -23,7 +31,6 @@ typedef struct {
     time_t start_time;
     time_t end_time;
 } CompletedTask;
-
 
 void save_state ();
 
@@ -84,6 +91,4 @@ void handle_task_requests (const char *fifo_name);
 */
 int start_server ();
 
-
 #endif /* ORCHESTRATOR_H */
-
