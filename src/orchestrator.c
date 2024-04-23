@@ -31,6 +31,26 @@ void setup_communication(const char *fifo_name) {
     }
 }
 
+void save_state() {
+    FILE *file = fopen("state.txt", "w");
+    if (file == NULL) {
+        perror("fopen");
+        exit(EXIT_FAILURE);
+    }
+
+    fprintf(file, "Waiting tasks:\n");
+    for (int i = 0; i < waiting_count; i++) {
+        fprintf(file, "Task ID: %s, Command: %s\n", waiting_queue[i].id, waiting_queue[i].command);
+    }
+
+    fprintf(file, "\nActive tasks:\n");
+    for (int i = 0; i < active_count; i++) {
+        fprintf(file, "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_tasks[i].pid);
+    }
+
+    fclose(file);
+}
+
 void enqueue_task(Task task) {
     if (waiting_count >= MAX_TASKS) {
         fprintf(stderr, "Fila de espera cheia. Tarefa %s não enfileirada.\n", task.id);
@@ -49,26 +69,6 @@ void enqueue_task(Task task) {
     waiting_queue[i] = task;
     waiting_count++;
     save_state();
-}
-
-void save_state() {
-    FILE *file = fopen("state.txt", "w");
-    if (file == NULL) {
-        perror("fopen");
-        exit(EXIT_FAILURE);
-    }
-
-    fprintf(file, "Waiting tasks:\n");
-    for (int i = 0; i < waiting_count; i++) {
-        fprintf(file, "Task ID: %s, Command: %s\n", waiting_queue[i].id, waiting_queue[i].command);
-    }
-
-    fprintf(file, "\nActive tasks:\n");
-for (int i = 0; i < active_count; i++) {
-    fprintf(file, "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_tasks[i].pid);
-}
-
-    fclose(file);
 }
 
 Task dequeue_task() {
@@ -170,54 +170,84 @@ void *handle_status_command_thread(void *arg) {
     return NULL;
 }
 
-void main_loop() {
-    while (1) {
-        // Check for completed tasks
-        for (int i = 0; i < active_count; i++) {
-            int status;
-            pid_t pid = waitpid(active_tasks[i].pid, &status, WNOHANG);
-            if (pid > 0) {
-                // Task completed
-                remove_active_task(i);
-                i--;  // Adjust index after removing task
-            } else if (pid < 0) {
-                perror("waitpid");
-            }
-        }
+// void main_loop() {
+//     while (1) {
+//         // Check for completed tasks
+//         for (int i = 0; i < active_count; i++) {
+//             int status;
+//             pid_t pid = waitpid(active_tasks[i].pid, &status, WNOHANG);
+//             if (pid > 0) {
+//                 // Task completed
+//                 remove_active_task(i);
+//                 i--;  // Adjust index after removing task
+//             } else if (pid < 0) {
+//                 perror("waitpid");
+//             }
+//         }
 
-        // Start new tasks if there is room
-        while (active_count < MAX_TASKS && waiting_count > 0) {
-            Task task = dequeue_task();
-            execute_task(task);
-        }
+//         // Start new tasks if there is room
+//         while (active_count < MAX_TASKS && waiting_count > 0) {
+//             Task task = dequeue_task();
+//             execute_task(task);
+//         }
 
-        sleep(1);  // Avoid busy waiting
-    }
-}
+//         sleep(1);  // Avoid busy waiting
+//     }
+// }
 
-void handle_client_request(int client_fd) {
-    char buffer[1024];
-    ssize_t num_read = read(client_fd, buffer, sizeof(buffer) - 1);
-    if (num_read <= 0) {
-        perror("read");
+void parse_client_request(const char *buffer, Task *task) {
+    char *token = strtok(buffer, " ");
+    if (token == NULL) {
+        fprintf(stderr, "Comando inválido.\n");
         return;
     }
 
-    buffer[num_read] = '\0';
-
-    if (strcmp(buffer, "status") == 0) {
-        pthread_t thread;
-        if (pthread_create(&thread, NULL, handle_status_command_thread, &client_fd) != 0) {
-            perror("pthread_create");
-            return;
-        }
-        pthread_detach(thread);
-    } else {
-        Task task;
-        parse_client_request(buffer, &task);
-        enqueue_task(task);
+    if (strcmp(token, "task") != 0) {
+        fprintf(stderr, "Comando inválido.\n");
+        return;
     }
+
+    token = strtok(NULL, " ");
+    if (token == NULL) {
+        fprintf(stderr, "ID da tarefa não fornecido.\n");
+        return;
+    }
+
+    strncpy(task->id, token, sizeof(task->id) - 1);
+
+    token = strtok(NULL, "");
+    if (token == NULL) {
+        fprintf(stderr, "Comando da tarefa não fornecido.\n");
+        return;
+    }
+
+    strncpy(task->command, token, sizeof(task->command) - 1);
+    task->estimated_time = 0;
 }
+
+// void handle_client_request(int client_fd) {
+//     char buffer[1024];
+//     ssize_t num_read = read(client_fd, buffer, sizeof(buffer) - 1);
+//     if (num_read <= 0) {
+//         perror("read");
+//         return;
+//     }
+
+//     buffer[num_read] = '\0';
+
+//     if (strcmp(buffer, "status") == 0) {
+//         pthread_t thread;
+//         if (pthread_create(&thread, NULL, handle_status_command_thread, &client_fd) != 0) {
+//             perror("pthread_create");
+//             return;
+//         }
+//         pthread_detach(thread);
+//     } else {
+//         Task task;
+//         parse_client_request(buffer, &task);
+//         enqueue_task(task);
+//     }
+// }
 
 /**
  * Ele percorre todas as tarefas ativas. Para cada tarefa, ele usa waitpid com a opção WNOHANG para 
@@ -262,12 +292,11 @@ void monitor_tasks() {
 }
 
 int start_server() {
-    int fifo_fd = setup_communication(PIPE_NAME);
-    if (fifo_fd < 0) {
-        fprintf(stderr, "Erro ao abrir o FIFO.\n");
-        return 1;
-    }
+    setup_communication(PIPE_NAME);
 
+    printf ("Servidor iniciado.\n");
+
+    int fifo_fd; // Declare fifo_fd variable
     char buffer[1024];
     while (1) {
         ssize_t num_read = read(fifo_fd, buffer, sizeof(buffer) - 1);
@@ -286,5 +315,14 @@ int start_server() {
     monitor_tasks();
 
     close(fifo_fd);
+    return 0;
+}
+
+int main() {
+    if (start_server() != 0) {
+        fprintf(stderr, "Erro ao iniciar o servidor.\n");
+        return 1;
+    }
+
     return 0;
 }

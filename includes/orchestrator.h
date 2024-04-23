@@ -3,6 +3,8 @@
 #define MAX_TASKS 100
 #define MAX_PROGS_PER_TASK 10
 #define COMMAND_LENGTH 4096
+#include <time.h>
+#include <sys/types.h>
 
 typedef struct {
     char id[256];
@@ -23,6 +25,15 @@ typedef struct {
 } CompletedTask;
 
 
+void save_state ();
+
+void handle_status_command ();
+
+void *handle_status_command_thread(void *arg);
+
+void parse_client_request(const char *buffer, Task *task);
+
+void handle_client_request(int client_fd);
 
 void main_loop ();
 

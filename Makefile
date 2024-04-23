@@ -1,25 +1,14 @@
 CC = gcc
-CFLAGS = -Wall -g -Iinclude
-LDFLAGS = $(shell pkg-config --libs glib-2.0) -lm -lncurses
-OUTPUT_FOLDER = output
+CFLAGS = -Wall -g -Iincludes
+LDFLAGS =
 
-all: orchestrator client
+all: client orchestrator
 
-orchestrator: bin/orchestrator
+client: 
+	$(CC) $(CFLAGS) src/client.c -o client $(LDFLAGS)
 
-client: bin/client
-
-folders:
-	@mkdir -p src include obj bin $(OUTPUT_FOLDER)
-
-bin/orchestrator: obj/orchestrator.o | folders
-	$(CC) $^ -o $@ $(LDFLAGS)
-
-bin/client: obj/client.o | folders
-	$(CC) $^ -o $@ $(LDFLAGS)
-
-obj/%.o: src/%.c | folders
-	$(CC) $(CFLAGS) -c $< -o $@
+orchestrator: 
+	$(CC) $(CFLAGS) src/orchestrator.c -o orchestrator $(LDFLAGS)
 
 clean:
-	rm -f obj/*.o bin/orchestrator bin/client
+	rm -f client orchestrator
