@@ -17,40 +17,53 @@ int main(int argc, char *argv[]) {
     }
 
     if (strcmp(argv[1], "status") == 0) {
-        // Open the FIFO for writing
-        int fifo_fd = open(PIPE_NAME, O_WRONLY);
-        if (fifo_fd == -1) {
-            perror("open");
-            return 1;
-        }
-
-        // Send the status command to the server via FIFO
-        if (write(fifo_fd, "status", strlen("status")) == -1) {
-            perror("write");
-            close(fifo_fd);
-            return 1;
-        }
-
-        // Read the response from the server
-        char buffer[4096];
-        if (read(fifo_fd, buffer, sizeof(buffer)) == -1) {
-            perror("read");
-            close(fifo_fd);
-            return 1;
-        }
-
-        // Print the status output
-        printf("%s\n", buffer);
-
-        // Close the FIFO
-        close(fifo_fd);
-        return 0;
+    // Open the FIFO for writing
+    int fifo_fd = open(PIPE_NAME, O_WRONLY);
+    if (fifo_fd == -1) {
+        perror("open");
+        return 1;
     }
 
+    // Send the status request to the server via FIFO
+    char status_request[] = "status";
+    if (write(fifo_fd, status_request, strlen(status_request)) == -1) {
+        perror("write");
+        close(fifo_fd);
+        return 1;
+    }
+
+    // Close the FIFO
+    close(fifo_fd);
+
+    // Open the FIFO for reading
+    fifo_fd = open(PIPE_NAME, O_RDONLY);
+    if (fifo_fd == -1) {
+        perror("open");
+        return 1;
+    }
+
+    // Read the status response from the server
+    char status_response[1024];
+    if (read(fifo_fd, status_response, sizeof(status_response)) == -1) {
+        perror("read");
+        close(fifo_fd);
+        return 1;
+    }
+
+    // Close the FIFO
+    close(fifo_fd);
+
+    // Print the status response
+    printf("%s\n", status_response);
+
+    return 0;
+    }
+
+
     if (strcmp(argv[1], "execute") == 0) {
-        if (argc < 5) {
-            fprintf(stderr, "Usage: %s execute tempo_em_ms [-u \"program args\"] [-p \"program1 args1 | program2 args2 | ...\"]\n", argv[0]);
-            return 1;
+        if (argc < 4) {
+        fprintf(stderr, "Usage: %s execute time -u 'prog-a [args]'\n", argv[0]);
+        return 1;
         }
 
         int time_estimated;
@@ -59,24 +72,17 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        char *command = NULL;
-        int i;
-        for (i = 3; i < argc; i++) {
-            if (strcmp(argv[i], "-u") == 0 || strcmp(argv[i], "-p") == 0) {
-                if (i + 1 < argc) {
-                    command = argv[i + 1];
-                    break;
-                } else {
-                    fprintf(stderr, "Missing program and arguments after '%s'.\n", argv[i]);
-                    return 1;
-                }
-            }
+        char command[300] = "";
+        strcat(command, argv[3]); // prog-a
+
+        // Concatenar todos os argumentos restantes em uma única string
+        for (int i = 4; i < argc; i++) {
+            strcat(command, " ");
+            strcat(command, argv[i]);
         }
 
-        if (command == NULL) {
-            fprintf(stderr, "Invalid command. Use '-u \"program args\"' or '-p \"program1 args1 | program2 args2 | ...\"'.\n");
-            return 1;
-        }
+        printf("Estimated time: %d ms\n", time_estimated);
+        printf("Command to execute: %s\n", command);
 
         // Open the FIFO for writing
         int fifo_fd = open(PIPE_NAME, O_WRONLY);

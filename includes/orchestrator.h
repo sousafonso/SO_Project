@@ -35,6 +35,8 @@ typedef struct {
     time_t end_time;
 } CompletedTask;
 
+void handle_status_command(int fifo_fd);
+
 void add_active_task(ActiveTask active_task);
 
 void setup_communication(const char *fifo_name);

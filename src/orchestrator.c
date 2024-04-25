@@ -13,6 +13,7 @@
 #include <pthread.h>
 
 #define PIPE_NAME "orchestrator_fifo"
+#define FIFO_PATH "/tmp/orchestrator_fifo"
 #define MAX_TASKS 100
 
 CompletedTask completed_tasks[MAX_TASKS];
@@ -26,6 +27,31 @@ int active_count = 0;
 pid_t active_pids[MAX_TASKS];
 
 pthread_mutex_t lock;
+
+void handle_status_command(int fifo_fd) {
+    char status_message[4096] = "Tarefas em espera e ativas:\n";
+
+    // Adicione o status das tarefas em espera ao status_message
+    strcat(status_message, "Tarefas em espera:\n");
+    for (int i = 0; i < waiting_count; i++) {
+        char task_info[256];
+        snprintf(task_info, sizeof(task_info), "Task ID: %s, Command: %s\n", waiting_queue[i].id, waiting_queue[i].command);
+        strcat(status_message, task_info);
+    }
+
+    // Adicione o status das tarefas ativas ao status_message
+    strcat(status_message, "\nTarefas ativas:\n");
+    for (int i = 0; i < active_count; i++) {
+        char task_info[256];
+        snprintf(task_info, sizeof(task_info), "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_pids[i]);
+        strcat(status_message, task_info);
+    }
+
+    // Envie a mensagem de status de volta para o cliente
+    if (write(fifo_fd, status_message, strlen(status_message) + 1) == -1) {
+        perror("write");
+    }
+}
 
 void add_active_task(ActiveTask active_task) {
     pthread_mutex_lock(&lock);
@@ -198,6 +224,40 @@ void monitor_tasks() {
     }
 }
 
+// int start_server() {
+//     setup_communication(PIPE_NAME);
+//     printf("Servidor iniciado.\n");
+
+//     int fifo_fd = open(PIPE_NAME, O_RDONLY);
+//     if (fifo_fd == -1) {
+//         perror("open");
+//         exit(EXIT_FAILURE);
+//     }
+
+//     char buffer[1024];
+//     ssize_t num_read;
+
+//     while (1) {
+//         num_read = read(fifo_fd, buffer, sizeof(buffer) - 1);
+//         if (num_read == -1) {
+//             perror("read");
+//             continue;
+//         } else if (num_read == 0) {
+//             // Nenhum dado disponível para ler, continue para a próxima iteração
+//             continue;
+//         }
+
+//         buffer[num_read] = '\0'; // Terminar o buffer com nulo
+
+//         Task task;
+//         parse_client_request(buffer, &task);
+//         enqueue_task(task);
+//     }
+
+//     close(fifo_fd);
+//     return 0;
+// }
+
 int start_server() {
     setup_communication(PIPE_NAME);
     printf("Servidor iniciado.\n");
@@ -217,15 +277,18 @@ int start_server() {
             perror("read");
             continue;
         } else if (num_read == 0) {
-            // Nenhum dado disponível para ler, continue para a próxima iteração
-            continue;
+            continue; // Nenhum dado disponível para ler
         }
 
         buffer[num_read] = '\0'; // Terminar o buffer com nulo
 
-        Task task;
-        parse_client_request(buffer, &task);
-        enqueue_task(task);
+        if (strcmp(buffer, "status") == 0) {
+            handle_status_command(fifo_fd); // Função a ser chamada para tratar o status
+        } else {
+            Task task;
+            parse_client_request(buffer, &task);
+            enqueue_task(task);
+        }
     }
 
     close(fifo_fd);
@@ -233,11 +296,9 @@ int start_server() {
 }
 
 int main() {
-    if (start_server() != 0) {
-        fprintf(stderr, "Erro ao iniciar o servidor.\n");
-        return 1;
-    }
-
+    setup_communication(FIFO_PATH);  // Isso deve criar o FIFO
+    start_server(); // A função que inicia o servidor
     return 0;
 }
+
 

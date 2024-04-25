@@ -2,6 +2,7 @@
     "files.associations": {
         "orchestrator.h": "c",
         "client.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "stdlib.h": "c"
     }
 }
