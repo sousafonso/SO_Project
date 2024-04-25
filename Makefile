@@ -22,4 +22,4 @@ obj/%.o: src/%.c | folders
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f obj/*.o orchestrator client
+	rm -r obj/ orchestrator client output/ bin/ state.txt orchestrator_fifo

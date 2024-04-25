@@ -3,6 +3,7 @@
 
 #include <time.h>
 #include <sys/types.h>
+#include <sys/time.h>
 
 #define MAX_TASKS 100
 #define MAX_PROGS_PER_TASK 10
