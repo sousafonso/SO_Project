@@ -2,334 +2,339 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #include <errno.h>
 #include <time.h>
+#include <pthread.h>
 
-#define FIFO_NAME "orchestrator_fifo"
-#define FIFO_PATH FIFO_PATH "/tmp/" FIFO_NAME
-#define MAX_TASKS 10
-#define MAX_PROGS_PER_TASK 10
-#define COMMAND_LENGTH 4096
+#define PIPE_NAME "orchestrator_fifo"
+#define MAX_TASKS 100
 
-// typedef struct {
-//     int id;
-//     pid_t pid;
-//     char commands[MAX_PROGS_PER_TASK][4096];
-//     int num_commands;
-//     time_t start_time;
-//     time_t end_time;
-//     int status;
-//     int total_time;
-// } Task;
+CompletedTask completed_tasks[MAX_TASKS];
+int completed_count = 0;
 
-// typedef struct {
-//     int id;
-//     pid_t pid;
-//     char commands[MAX_PROGS_PER_TASK][COMMAND_LENGTH];
-//     int num_commands;
-//     time_t start_time;
-//     time_t end_time;
-//     char status; // 'W' for waiting, 'R' for running, 'C' for complete
-//     int execution_time; // Real execution time
-// } Task;
+Task waiting_queue[MAX_TASKS];
+int waiting_count = 0;
 
-Task tasks[MAX_TASKS];
-int current_tasks = 0;
-// int num_tasks = 0;
-int next_task_id = 1;
-int parallel_tasks;
+ActiveTask active_tasks[MAX_TASKS];
+int active_count = 0;
+pid_t active_pids[MAX_TASKS];
 
-/**
- * Função para logar as informações de uma tarefa
- * @param task Ponteiro para a tarefa
-*/
-void log_task_info(Task *task) {
-    char filename[256];
-    snprintf(filename, sizeof(filename), "%d.out", task->id);
-    FILE *file = fopen(filename, "r");
+pthread_mutex_t lock;
+
+void add_active_task(ActiveTask active_task) {
+    pthread_mutex_lock(&lock);
+    active_tasks[active_count] = active_task;
+    active_pids[active_count] = active_task.pid;
+    active_count++;
+    pthread_mutex_unlock(&lock);
+}
+
+void setup_communication(const char *fifo_name) {
+    if (mkfifo(fifo_name, 0666) == -1 && errno != EEXIST) {
+        perror("mkfifo");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void save_state() {
+    FILE *file = fopen("state.txt", "w");
     if (file == NULL) {
-        perror("Falha ao abrir arquivo de saída");
-        return;
+        perror("fopen");
+        exit(EXIT_FAILURE);
     }
 
-    char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), file) != NULL) {
-        printf("%s", buffer);
+    fprintf(file, "Waiting tasks:\n");
+    for (int i = 0; i < waiting_count; i++) {
+        fprintf(file, "Task ID: %s, Command: %s\n", waiting_queue[i].id, waiting_queue[i].command);
+    }
+
+    fprintf(file, "\nActive tasks:\n");
+    for (int i = 0; i < active_count; i++) {
+        fprintf(file, "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_tasks[i].pid);
     }
 
     fclose(file);
 }
 
-/**
- * Função de tratamento do sinal SIGCHLD
- * o SIGCHLD é enviado para o processo pai quando um processo filho termina e é usado para tratar processos "zumbis"
-*/
-void handle_finished_task (int sig) {
-    pid_t pid;
-    int status;
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        for (int i = 0; i < current_tasks; ++i) {
-            if (tasks[i].pid == pid) {
-                time(&tasks[i].end_time);
-                tasks[i].execution_time = difftime(tasks[i].end_time, tasks[i].start_time);
-                tasks[i].status = 'C';
-                log_task_info(&tasks[i]);
-                tasks[i].pid = -1;
-                current_tasks--;
+void enqueue_task(Task task) {
+
+    // Obter o tempo atual
+    struct timeval now;
+    gettimeofday(&now, NULL);
+
+    // Armazenar o tempo de início da tarefa
+    strcpy(task_start_times[waiting_count].id, task.id);
+    task_start_times[waiting_count].start_time = now;
+
+    if (waiting_count >= MAX_TASKS) {
+        fprintf(stderr, "Fila de espera cheia. Tarefa %s não enfileirada.\n", task.id);
+        return;
+    }
+
+    int i = 0;
+    while (i < waiting_count && waiting_queue[i].estimated_time <= task.estimated_time) {
+        i++;
+    }
+
+    for (int j = waiting_count; j > i; j--) {
+        waiting_queue[j] = waiting_queue[j - 1];
+    }
+
+    waiting_queue[i] = task;
+    waiting_count++;
+    save_state();
+}
+
+Task dequeue_task() {
+    if (waiting_count == 0) {
+        fprintf(stderr, "Fila de espera vazia.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    Task task = waiting_queue[0];
+    for (int i = 0; i < waiting_count - 1; i++) {
+        waiting_queue[i] = waiting_queue[i + 1];
+    }
+    waiting_count--;
+    save_state();
+    return task;
+}
+
+void remove_active_task(int index) {
+    // Obter o tempo atual
+    struct timeval now;
+    gettimeofday(&now, NULL);
+
+    // Calcular o tempo de execução da tarefa
+    struct timeval start_time = task_start_times[index].start_time;
+    long execution_time = (now.tv_sec - start_time.tv_sec) * 1000 + (now.tv_usec - start_time.tv_usec) / 1000;
+
+    // Registrar a tarefa em um arquivo
+    FILE *file = fopen("task_log.txt", "a");
+    if (file == NULL) {
+        perror("fopen");
+        return;
+    }
+    fprintf(file, "Task ID: %s, Execution time: %ld ms\n", active_tasks[index].task.id, execution_time);
+    fclose(file);
+
+    if (index < active_count - 1) {
+        memmove(&active_tasks[index], &active_tasks[index + 1], (active_count - index - 1) * sizeof(Task));
+        memmove(&active_pids[index], &active_pids[index + 1], (active_count - index - 1) * sizeof(pid_t));
+    }
+    active_count--;
+    save_state();
+}
+
+void execute_tasks() {
+    while (1) {
+        // Verificar se algum processo filho terminou
+        for (int i = 0; i < active_count; i++) {
+            int status;
+            pid_t pid = waitpid(active_pids[i], &status, WNOHANG);
+            if (pid == -1) {
+                perror("waitpid");
+                return;
+            } else if (pid == active_pids[i]) {
+                // O processo filho terminou, remover a tarefa correspondente
+                remove_active_task(i);
                 break;
             }
         }
+
+        // Se houver tarefas na fila de espera, iniciar a próxima tarefa
+        if (waiting_count > 0) {
+            Task task = dequeue_task();
+            execute_tasks(task);
+        }
+
+        // Dormir por um curto período de tempo para evitar uso excessivo de CPU
+        usleep(1000);
     }
 }
 
-// void task_finished(int sig) {
-//     pid_t pid;
-//     int status;
-//     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-//         current_tasks--;
-//         update_task_status(pid, 'C');
+void handle_status_command() {
+    printf("Active tasks:\n");
+    for (int i = 0; i < active_count; i++) {
+        printf("Task %s: started at %ld, command: %s\n", active_tasks[i].task.id, active_tasks[i].start_time, active_tasks[i].task.command);
+    }
+
+    printf("Waiting tasks:\n");
+    for (int i = 0; i < waiting_count; i++) {
+        printf("Task %s: enqueued, command: %s\n", waiting_queue[i].id, waiting_queue[i].command);
+    }
+
+    printf("Completed tasks:\n");
+    for (int i = 0; i < completed_count; i++) {
+        printf("Task %s: started at %ld, ended at %ld, command: %s\n", completed_tasks[i].task.id, completed_tasks[i].start_time, completed_tasks[i].end_time, completed_tasks[i].task.command);
+    }
+}
+
+void *handle_status_command_thread(void *arg) {
+    int client_fd = *(int *)arg;
+    handle_status_command();
+    close(client_fd);
+    return NULL;
+}
+
+// void main_loop() {
+//     while (1) {
+//         // Check for completed tasks
+//         for (int i = 0; i < active_count; i++) {
+//             int status;
+//             pid_t pid = waitpid(active_tasks[i].pid, &status, WNOHANG);
+//             if (pid > 0) {
+//                 // Task completed
+//                 remove_active_task(i);
+//                 i--;  // Adjust index after removing task
+//             } else if (pid < 0) {
+//                 perror("waitpid");
+//             }
+//         }
+
+//         // Start new tasks if there is room
+//         while (active_count < MAX_TASKS && waiting_count > 0) {
+//             Task task = dequeue_task();
+//             execute_task(task);
+//         }
+
+//         sleep(1);  // Avoid busy waiting
+//     }
+// }
+
+void parse_client_request(const char *buffer, Task *task) {
+    char *token = strtok(buffer, " ");
+    if (token == NULL) {
+        fprintf(stderr, "Comando inválido.\n");
+        return;
+    }
+
+    if (strcmp(token, "task") != 0) {
+        fprintf(stderr, "Comando inválido.\n");
+        return;
+    }
+
+    token = strtok(NULL, " ");
+    if (token == NULL) {
+        fprintf(stderr, "ID da tarefa não fornecido.\n");
+        return;
+    }
+
+    strncpy(task->id, token, sizeof(task->id) - 1);
+
+    token = strtok(NULL, "");
+    if (token == NULL) {
+        fprintf(stderr, "Comando da tarefa não fornecido.\n");
+        return;
+    }
+
+    strncpy(task->command, token, sizeof(task->command) - 1);
+    task->estimated_time = 0;
+}
+
+// void handle_client_request(int client_fd) {
+//     char buffer[1024];
+//     ssize_t num_read = read(client_fd, buffer, sizeof(buffer) - 1);
+//     if (num_read <= 0) {
+//         perror("read");
+//         return;
+//     }
+
+//     buffer[num_read] = '\0';
+
+//     if (strcmp(buffer, "status") == 0) {
+//         pthread_t thread;
+//         if (pthread_create(&thread, NULL, handle_status_command_thread, &client_fd) != 0) {
+//             perror("pthread_create");
+//             return;
+//         }
+//         pthread_detach(thread);
+//     } else {
+//         Task task;
+//         parse_client_request(buffer, &task);
+//         enqueue_task(task);
 //     }
 // }
 
 /**
- * Função para fazer o parsing dos comandos de uma tarefa
- * @param commands Matriz de strings para armazenar os comandos
- * @param command_string String com os comandos separados por "|"
+ * Ele percorre todas as tarefas ativas. Para cada tarefa, ele usa waitpid com a opção WNOHANG para 
+ * verificar se a tarefa terminou. Se a tarefa terminou, ele registra o tempo de término, 
+ * calcula a duração real da tarefa, imprime uma mensagem e remove a tarefa da lista de tarefas ativas.
+ * 
+ * Depois de verificar todas as tarefas ativas, ele verifica se há tarefas esperando para serem iniciadas
+ *  e se há espaço para iniciar mais tarefas. Se houver, ele desenfileira a próxima tarefa e a inicia.
+ * 
+ * Finalmente, ele faz uma pausa de um segundo antes de começar o próximo ciclo.
 */
-int parse_commands(char commands[MAX_PROGS_PER_TASK][COMMAND_LENGTH], const char* command_string){
-    int num_commands = 0;
-    char *token = strtok(command_string, "|");
-    while (token != NULL && num_commands < MAX_PROGS_PER_TASK) {
-        snprintf(commands[num_commands], sizeof(commands[num_commands]), "%s", token);
-        token = strtok(NULL, "|");
-        num_commands++;
+void monitor_tasks() {
+    while (1) {
+        for (int i = 0; i < active_count; ) {
+            int status;
+            pid_t result = waitpid(active_tasks[i].pid, &status, WNOHANG);
+            if (result == -1) {
+                perror("waitpid");
+                exit(EXIT_FAILURE);
+            } else if (result == 0) {
+                i++;
+            } else {
+                time_t end_time = time(NULL);
+                time_t duration = end_time - active_tasks[i].start_time;
+                printf("Task %s finished. Real duration: %ld seconds.\n", active_tasks[i].task.id, duration);
+                completed_tasks[completed_count++] = (CompletedTask){
+                    .task = active_tasks[i].task,
+                    .start_time = active_tasks[i].start_time,
+                    .end_time = end_time
+                };
+                remove_active_task(i);
+            }
+        }
+
+        while (waiting_count > 0 && active_count < MAX_TASKS) {
+            Task next_task = dequeue_task();
+            execute_tasks(next_task);
+        }
+
+        sleep(1);
     }
-    return num_commands;
 }
 
-/**
- * Função para executar um comando no shell
- * @param command Comando a ser executado
- * @return 0 se o comando foi executado com sucesso, -1 caso contrário
-*/
-int execute_command(const char *command) {
-    int pipefd[2];
-    if (pipe(pipefd) == -1) {
-        perror("Falha ao criar pipe");
-        return -1;
-    }
+int start_server() {
+    setup_communication(PIPE_NAME);
 
-    pid_t pid = fork();
-    if (pid == -1) {
-        perror("Falha ao criar processo filho");
-        return -1;
-    }
+    printf ("Servidor iniciado.\n");
 
-    if (pid == 0) { // Processo filho
-        close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
-        close(pipefd[1]);
-
-        execlp("/bin/sh", "sh", "-c", command, NULL);
-        perror("Falha ao executar o comando");
-        exit(EXIT_FAILURE);
-    } else {
-        close(pipefd[1]);
-        char buffer[4096];
-        while (read(pipefd[0], buffer, sizeof(buffer)) > 0) {
-            printf("%s", buffer);
+    int fifo_fd; // Declare fifo_fd variable
+    char buffer[1024];
+    while (1) {
+        ssize_t num_read = read(fifo_fd, buffer, sizeof(buffer) - 1);
+        if (num_read <= 0) {
+            perror("read");
+            continue;
         }
-        close(pipefd[0]);
+
+        buffer[num_read] = '\0';
+
+        Task task;
+        parse_client_request(buffer, &task);
+        enqueue_task(task);
+    }
+
+    monitor_tasks();
+
+    close(fifo_fd);
+    return 0;
+}
+
+int main() {
+    if (start_server() != 0) {
+        fprintf(stderr, "Erro ao iniciar o servidor.\n");
+        return 1;
     }
 
     return 0;
 }
-
-/**
- * Função para saber o status das tarefas
-*/
-void handle_status_request() {
-    printf("Tarefas em execução:\n");
-    for (int i = 0; i < current_tasks; ++i) {
-        if (tasks[i].pid != -1) {
-            printf("ID: %d | Comando: %s\n", tasks[i].id, tasks[i].commands[0]);
-        }
-    }
-}
-
-/**
- * Função para atualizar as tarefas que terminaram
- * PRIMEIRA VERSÃO **POR ANALISAR*
-*/
-// void update_finished_tasks() {
-//     for (int i = 0; i < current_tasks; ++i) {
-//         if (tasks[i].pid != -1) {
-//             int status;
-//             pid_t pid = waitpid(tasks[i].pid, &status, WNOHANG);
-//             if (pid > 0) {
-//                 time(&tasks[i].end_time);
-//                 tasks[i].execution_time = difftime(tasks[i].end_time, tasks[i].start_time);
-//                 tasks[i].status = 'C';
-//                 log_task_info(&tasks[i]);
-//                 tasks[i].pid = -1;
-//                 current_tasks--;
-//             }
-//         }
-//     }
-// }
-
-void sort_tasks_by_estimated_duration(Task tasks[], int n) {
-    // Implementação simples de Bubble Sort para o exemplo
-    int i, j;
-    for (i = 0; i < n-1; i++)        
-        for (j = 0; j < n-i-1; j++)  
-            if (tasks[j].estimated_duration > tasks[j+1].estimated_duration) {
-                Task temp = tasks[j];
-                tasks[j] = tasks[j+1];
-                tasks[j+1] = temp;
-            }
-}
-
-// void start_task_if_possible();
-
-/**
- * Função para executar uma tarefa
- * @param commands Comandos a serem executados
-*/
-void execute_task(char *commands) {
-    int task_index = -1;
-    for (int i = 0; i < current_tasks; ++i) {
-        if (tasks[i].pid == -1) {
-            task_index = i;
-            break;
-        }
-    }
-
-    if (task_index == -1 || current_tasks >= MAX_TASKS) {
-        fprintf(stderr, "Limite de tarefas atingido\n");
-        return;
-    }
-
-    int id = rand(); // Gerar um identificador único para a tarefa
-    tasks[task_index].id = id;
-    tasks[task_index].num_commands = 0;
-
-    char *token = strtok(commands, "|");
-    while (token != NULL && tasks[task_index].num_commands < MAX_PROGS_PER_TASK) {
-        snprintf(tasks[task_index].commands[tasks[task_index].num_commands], sizeof(tasks[task_index].commands[tasks[task_index].num_commands]), "%s", token);
-        token = strtok(NULL, "|");
-        tasks[task_index].num_commands++;
-    }
-
-    tasks[task_index].pid = fork();
-    if (tasks[task_index].pid == -1) {
-        perror("Falha ao criar processo filho");
-        return;
-    }
-
-    if (tasks[task_index].pid == 0) { // Processo filho
-        time(&tasks[task_index].start_time);
-        char filename[256];
-        snprintf(filename, sizeof(filename), "%d.out", id);
-        int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-        if (fd == -1) {
-            perror("Falha ao abrir arquivo de saída");
-            exit(EXIT_FAILURE);
-        }
-
-        for (int i = 0; i < tasks[task_index].num_commands; ++i) {
-            int pipefd[2];
-            if (pipe(pipefd) == -1) {
-                perror("Falha ao criar pipe");
-                exit(EXIT_FAILURE);
-            }
-
-            pid_t pid = fork();
-            if (pid == -1) {
-                perror("Falha ao criar processo filho");
-                exit(EXIT_FAILURE);
-            }
-
-            if (pid == 0) { // Processo filho
-                if (i != 0) {
-                    close(pipefd[0]);
-                    dup2(pipefd[1], STDOUT_FILENO);
-                    close(pipefd[1]);
-                } else {
-                    dup2(fd, STDOUT_FILENO);
-                }
-
-                if (i != tasks[task_index].num_commands - 1) {
-                    close(pipefd[1]);
-                    dup2(pipefd[0], STDIN_FILENO);
-                    close(pipefd[0]);
-                }
-
-                execlp("/bin/sh", "sh", "-c", tasks[task_index].commands[i], NULL);
-                perror("Falha ao executar o comando");
-                exit(EXIT_FAILURE);
-            } else {
-                if (i != 0) {
-                    close(pipefd[1]);
-                }
-                if (i != tasks[task_index].num_commands - 1) {
-                    close(pipefd[0]);
-                }
-            }
-        }
-
-        close(fd);
-        for (int i = 0; i < tasks[task_index].num_commands; ++i) {
-            wait(NULL);
-        }
-
-        exit(EXIT_SUCCESS);
-    }
-
-    current_tasks++;
-    printf("Tarefa com ID %d em execução\n", id);
-}
-
-int orchestrator(int argc, char *argv[]) {
-    if (argc != 4) {
-        fprintf(stderr, "Uso: %s output_folder parallel-tasks sched-policy\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
-    char *output_folder = argv[1];
-    parallel_tasks = atoi(argv[2]);
-    char *sched_policy = argv[3];
-
-    umask(0);
-    mkfifo(FIFO_NAME, 0666);
-
-    int fd = open(FIFO_NAME, O_RDONLY);
-    if (fd == -1) {
-        perror("Falha ao abrir o pipe nomeado");
-        exit(EXIT_FAILURE);
-    }
-
-    char buffer[4096];
-    while (1) {
-        if (read(fd, buffer, sizeof(buffer)) > 0) {
-            char *token = strtok(buffer, " ");
-            if (strcmp(token, "execute") == 0) {
-                char *time_str = strtok(NULL, " ");
-                char *command = strtok(NULL, "");
-                execute_task(command);
-            } else if (strcmp(token, "status") == 0) {
-                handle_status_request();
-            }
-        }
-    }
-
-    close(fd);
-    unlink(FIFO_NAME);
-    exit(EXIT_SUCCESS);
-}
-
