@@ -5,21 +5,21 @@ OUTPUT_FOLDER = output
 
 all: orchestrator client
 
-orchestrator: bin/orchestrator
+bin/orchestrator: orchestrator
 
-client: bin/client
+bin/client: client
 
 folders:
-	@mkdir -p src include obj bin $(OUTPUT_FOLDER)
+	@mkdir -p src includes obj bin $(OUTPUT_FOLDER)
 
-bin/orchestrator: obj/orchestrator.o | folders
+orchestrator: obj/orchestrator.o | folders
 	$(CC) $^ -o $@ $(LDFLAGS)
 
-bin/client: obj/client.o | folders
+client: obj/client.o | folders
 	$(CC) $^ -o $@ $(LDFLAGS)
 
 obj/%.o: src/%.c | folders
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f obj/*.o bin/orchestrator bin/client
+	rm -f obj/*.o orchestrator client
