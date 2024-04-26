@@ -15,6 +15,7 @@
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH "/tmp/" FIFO_NAME
 #define MAX_TASKS 100
+#define MAX_COMMAND_SIZE 4096
 
 CompletedTask completed_tasks[MAX_TASKS];
 int completed_count = 0;
@@ -62,9 +63,11 @@ void add_active_task(ActiveTask active_task) {
 }
 
 void setup_communication(const char *fifo_name) {
-    if (mkfifo(fifo_name, 0666) == -1 && errno != EEXIST) {
-        perror("mkfifo");
-        exit(EXIT_FAILURE);
+    if (mkfifo(fifo_name, 0666) == -1) {
+        if (errno != EEXIST) {
+            perror("mkfifo");
+            exit(EXIT_FAILURE);
+        }
     }
 }
 
@@ -104,6 +107,38 @@ void parse_client_request(const char *buffer, Task *task) {
 
     task->estimated_time = 0;
 }
+
+// VERSÃO 2
+// void parse_client_request(const char *buffer, Task *task) {
+//     char execute_keyword[8];
+//     char command_buffer[MAX_COMMAND_SIZE]; // Defina um tamanho adequado para o seu comando
+
+//     // Primeiro tenta ler a palavra "execute" e o tempo estimado
+//     int num_args_scanned = sscanf(buffer, "%7s %d", execute_keyword, &task->estimated_time);
+//     if (num_args_scanned != 2 || strcmp(execute_keyword, "execute") != 0) {
+//         fprintf(stderr, "Erro: comando inválido ou tempo estimado ausente.\n");
+//         return;
+//     }
+
+//     // Após ler o tempo estimado, move o buffer para frente, além do tempo
+//     buffer = strchr(buffer, ' '); // Encontra o espaço após "execute"
+//     buffer = strchr(buffer + 1, ' '); // Encontra o espaço após o tempo estimado
+//     if (!buffer) {
+//         fprintf(stderr, "Erro: formato de comando inválido.\n");
+//         return;
+//     }
+//     buffer++; // Avança para o primeiro caractere do comando
+
+//     // Agora, tenta ler o comando entre aspas
+//     if (sscanf(buffer, "\"%[^\"]\"", command_buffer) != 1) {
+//         fprintf(stderr, "Erro: comando ausente ou não entre aspas.\n");
+//         return;
+//     }
+
+//     // Copia o comando para a estrutura Task
+//     strncpy(task->command, command_buffer, sizeof(task->command) - 1);
+//     task->command[sizeof(task->command) - 1] = '\0'; // Garante o terminador nulo
+// }
 
 void save_state() {
     FILE *file = fopen("state.txt", "w");
