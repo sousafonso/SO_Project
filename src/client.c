@@ -80,24 +80,6 @@ int main(int argc, char *argv[]) {
         return 1;
         }
 
-        int time_estimated;
-        if (sscanf(argv[2], "%d", &time_estimated) != 1 || time_estimated <= 0) {
-            fprintf(stderr, "Invalid estimated time. Please provide a positive integer.\n");
-            return 1;
-        }
-
-        char command[300] = "";
-        strcat(command, argv[3]); // prog-a
-
-        // Concatenar todos os argumentos restantes em uma única string
-        for (int i = 4; i < argc; i++) {
-            strcat(command, " ");
-            strcat(command, argv[i]);
-        }
-
-        printf("Estimated time: %d ms\n", time_estimated);
-        printf("Command to execute: %s\n", command);
-
         // Open the FIFO for writing
         int fifo_fd = open(FIFO_PATH, O_WRONLY);
         if (fifo_fd == -1) {
@@ -105,8 +87,10 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        // Send the command to the server via FIFO
-        if (write(fifo_fd, command, strlen(command)) == -1) {
+        // Send the execute request to the server via FIFO
+        char execute_request[1024];
+        snprintf(execute_request, sizeof(execute_request), "%s %s %s \"%s\"", argv[1], argv[2], argv[3], argv[4]);
+        if (write(fifo_fd, execute_request, strlen(execute_request)) == -1) {
             perror("write");
             close(fifo_fd);
             return 1;

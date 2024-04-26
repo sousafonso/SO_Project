@@ -77,35 +77,36 @@ void parse_client_request(const char *buffer, Task *task) {
         return;
     }
 
-    // Tokeniza o buffer para extrair o ID da tarefa e o comando
-    char *token = strtok(buffer, " ");
-    if (token == NULL) {
-        fprintf(stderr, "Erro: comando inválido.\n");
+    char execute_keyword[8];
+    char time_keyword[3];
+    char command_buffer[300]; // Defina um tamanho adequado para o seu comando
+
+    // Primeiro tenta ler a palavra "execute" e o tempo estimado
+    int num_args_scanned = sscanf(buffer, "%7s %d %2s", execute_keyword, &task->estimated_time, time_keyword);
+    if (num_args_scanned != 3 || strcmp(execute_keyword, "execute") != 0 || (strcmp(time_keyword, "-u") != 0 && strcmp(time_keyword, "-p") != 0)) {
+        fprintf(stderr, "Erro: comando inválido ou tempo estimado ausente.\n");
         return;
     }
 
-    if (strcmp(token, "task") != 0) {
-        fprintf(stderr, "Erro: comando inválido.\n");
+    // Após ler o tempo estimado, move o buffer para frente, além do tempo
+    buffer = strchr(buffer, ' '); // Encontra o espaço após "execute"
+    buffer = strchr(buffer + 1, ' '); // Encontra o espaço após o tempo estimado
+    buffer = strchr(buffer + 1, ' '); // Encontra o espaço após "-u" ou "-p"
+    if (!buffer) {
+        fprintf(stderr, "Erro: formato de comando inválido.\n");
+        return;
+    }
+    buffer++; // Avança para o primeiro caractere do comando
+
+    // Agora, tenta ler o comando entre aspas
+    if (sscanf(buffer, "\"%[^\"]\"", command_buffer) != 1) {
+        fprintf(stderr, "Erro: comando ausente ou não entre aspas.\n");
         return;
     }
 
-    // Extrai o ID da tarefa
-    token = strtok(NULL, " ");
-    if (token == NULL) {
-        fprintf(stderr, "Erro: ID da tarefa não fornecido.\n");
-        return;
-    }
-    strncpy(task->id, token, sizeof(task->id) - 1);
-
-    // Extrai o comando da tarefa
-    token = strtok(NULL, "");
-    if (token == NULL) {
-        fprintf(stderr, "Erro: comando da tarefa não fornecido.\n");
-        return;
-    }
-    strncpy(task->command, token, sizeof(task->command) - 1);
-
-    task->estimated_time = 0;
+    // Copia o comando para a estrutura Task
+    strncpy(task->command, command_buffer, sizeof(task->command) - 1);
+    task->command[sizeof(task->command) - 1] = '\0'; // Garante o terminador nulo
 }
 
 // VERSÃO 2
