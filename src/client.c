@@ -7,8 +7,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#define PIPE_NAME "orchestrator_fifo"
-#define FIFO_PATH "/tmp/orchestrator_fifo"
+#define FIFO_NAME "orchestrator_fifo"
+#define FIFO_PATH "/tmp/" FIFO_NAME
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -18,7 +18,7 @@ int main(int argc, char *argv[]) {
 
     if (strcmp(argv[1], "status") == 0) {
     // Open the FIFO for writing
-    int fifo_fd = open(PIPE_NAME, O_WRONLY);
+    int fifo_fd = open(FIFO_NAME, O_WRONLY);
     if (fifo_fd == -1) {
         perror("open");
         return 1;
@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
     close(fifo_fd);
 
     // Open the FIFO for reading
-    fifo_fd = open(PIPE_NAME, O_RDONLY);
+    fifo_fd = open(FIFO_NAME, O_RDONLY);
     if (fifo_fd == -1) {
         perror("open");
         return 1;
@@ -85,7 +85,7 @@ int main(int argc, char *argv[]) {
         printf("Command to execute: %s\n", command);
 
         // Open the FIFO for writing
-        int fifo_fd = open(PIPE_NAME, O_WRONLY);
+        int fifo_fd = open(FIFO_NAME, O_WRONLY);
         if (fifo_fd == -1) {
             perror("open");
             return 1;

@@ -12,8 +12,8 @@
 #include <time.h>
 #include <pthread.h>
 
-#define PIPE_NAME "orchestrator_fifo"
-#define FIFO_PATH "/tmp/orchestrator_fifo"
+#define FIFO_NAME "orchestrator_fifo"
+#define FIFO_PATH "/tmp/" FIFO_NAME
 #define MAX_TASKS 100
 
 CompletedTask completed_tasks[MAX_TASKS];
@@ -31,7 +31,7 @@ pthread_mutex_t lock;
 void handle_status_command(int fifo_fd) {
     char status_message[4096] = "Tarefas em espera e ativas:\n";
 
-    // Adicione o status das tarefas em espera ao status_message
+    // Adicionar o status das tarefas em espera ao status_message
     strcat(status_message, "Tarefas em espera:\n");
     for (int i = 0; i < waiting_count; i++) {
         char task_info[256];
@@ -39,7 +39,7 @@ void handle_status_command(int fifo_fd) {
         strcat(status_message, task_info);
     }
 
-    // Adicione o status das tarefas ativas ao status_message
+    // Adicionar o status das tarefas ativas ao status_message
     strcat(status_message, "\nTarefas ativas:\n");
     for (int i = 0; i < active_count; i++) {
         char task_info[256];
@@ -47,7 +47,7 @@ void handle_status_command(int fifo_fd) {
         strcat(status_message, task_info);
     }
 
-    // Envie a mensagem de status de volta para o cliente
+    // Envia a mensagem de status de volta para o cliente
     if (write(fifo_fd, status_message, strlen(status_message) + 1) == -1) {
         perror("write");
     }
@@ -102,7 +102,6 @@ void parse_client_request(const char *buffer, Task *task) {
     }
     strncpy(task->command, token, sizeof(task->command) - 1);
 
-    // Defina um tempo estimado padrão (por exemplo, 0) ou ajuste conforme necessário
     task->estimated_time = 0;
 }
 
@@ -165,7 +164,7 @@ void remove_active_task(int index) {
     long execution_time = (now.tv_sec - active_tasks[index].start_time.tv_sec) * 1000 +
                           (now.tv_usec - active_tasks[index].start_time.tv_usec) / 1000;
 
-    // Registrar a tarefa em um arquivo
+    // Registar a tarefa num arquivo
     FILE *file = fopen("task_log.txt", "a");
     if (file == NULL) {
         perror("fopen");
@@ -259,10 +258,10 @@ void monitor_tasks() {
 // }
 
 int start_server() {
-    setup_communication(PIPE_NAME);
+    setup_communication(FIFO_PATH);
     printf("Servidor iniciado.\n");
 
-    int fifo_fd = open(PIPE_NAME, O_RDONLY);
+    int fifo_fd = open(FIFO_PATH, O_RDONLY);
     if (fifo_fd == -1) {
         perror("open");
         exit(EXIT_FAILURE);
@@ -277,13 +276,19 @@ int start_server() {
             perror("read");
             continue;
         } else if (num_read == 0) {
-            continue; // Nenhum dado disponível para ler
+            continue; 
         }
 
         buffer[num_read] = '\0'; // Terminar o buffer com nulo
 
         if (strcmp(buffer, "status") == 0) {
-            handle_status_command(fifo_fd); // Função a ser chamada para tratar o status
+            int write_fd = open(FIFO_PATH, O_WRONLY);
+            if (write_fd == -1) {
+                perror("open");
+                continue;
+            }
+            handle_status_command(write_fd);
+            close(write_fd);
         } else {
             Task task;
             parse_client_request(buffer, &task);
@@ -296,9 +301,6 @@ int start_server() {
 }
 
 int main() {
-    setup_communication(FIFO_PATH);  // Isso deve criar o FIFO
-    start_server(); // A função que inicia o servidor
+    start_server();
     return 0;
 }
-
-
