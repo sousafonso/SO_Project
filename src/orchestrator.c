@@ -169,6 +169,12 @@ void enqueue_task(Task task) {
 
     waiting_queue[waiting_count++] = task;
     save_state();
+
+    // Iniciar a tarefa se houver espaço e a fila de espera não estiver vazia
+    if (active_count < MAX_TASKS && waiting_count > 0) {
+        Task next_task = dequeue_task();
+        execute_task(next_task);
+    }
 }
 
 Task dequeue_task() {
