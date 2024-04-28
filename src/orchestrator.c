@@ -342,7 +342,37 @@ int start_server() {
     return 0;
 }
 
-int main() {
-    start_server();
+int main(int argc, char *argv[]) {
+    if (argc != 4) {
+        fprintf(stderr, "Uso: %s output_folder parallel_tasks sched_policy\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    char *output_folder = argv[1];
+    int parallel_tasks = atoi(argv[2]);
+    char *sched_policy = argv[3];
+
+    // Verifique se output_folder é um diretório válido
+    struct stat s;
+    if (stat(output_folder, &s) != 0 || !S_ISDIR(s.st_mode)) {
+        fprintf(stderr, "Erro: %s não é um diretório válido.\n", output_folder);
+        exit(EXIT_FAILURE);
+    }
+
+    // Verifique se parallel_tasks é um número válido
+    if (parallel_tasks <= 0) {
+        fprintf(stderr, "Erro: parallel_tasks deve ser um número maior que 0.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Verifique se sched_policy é uma política de escalonamento válida
+    if (strcmp(sched_policy, "FIFO") != 0 && strcmp(sched_policy, "RR") != 0) {
+        fprintf(stderr, "Erro: sched_policy deve ser 'FIFO' ou 'RR'.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Inicie o servidor com os argumentos fornecidos
+    start_server(output_folder, parallel_tasks, sched_policy);
+
     return 0;
 }
