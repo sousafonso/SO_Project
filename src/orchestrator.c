@@ -17,7 +17,7 @@
 
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH "/tmp/" FIFO_NAME
-#define MAX_TASKS 100
+#define MAX_TASKS 2
 #define MAX_COMMAND_SIZE 4096
 
 CompletedTask completed_tasks[MAX_TASKS];
@@ -131,7 +131,7 @@ void save_state() {
 
     fclose(file);
 }
-
+/*
 void enqueue_task(Task task) {
     if (waiting_count >= MAX_TASKS) {
         fprintf(stderr, "Fila de espera cheia. Tarefa %s não enfileirada.\n", task.id);
@@ -147,7 +147,7 @@ void enqueue_task(Task task) {
         execute_task(next_task);
     }
 }
-
+*/
 Task dequeue_task() {
     if (waiting_count == 0) {
         fprintf(stderr, "Fila de espera vazia.\n");
@@ -161,6 +161,38 @@ Task dequeue_task() {
     waiting_count--;
     save_state();
     return task;
+}
+
+void enqueue_task(Task task) {
+
+    // Verificar se a tarefa recém-adicionada tem um tempo de execução estimado menor
+    if (active_count > 0 && task.estimated_time < active_tasks[0].task.estimated_time) {
+        fprintf(stderr, "Tarefa de maior prioridade adicionada. Interrompendo tarefa ativa...\n");
+
+        // Interromper a tarefa ativa atual
+        Task active_task = active_tasks[0].task;
+        kill(active_tasks[0].pid, SIGKILL);
+        remove_active_task(0);
+        waiting_queue[waiting_count++] = active_task;
+    }
+
+    if (active_count >= MAX_TASKS) {
+        fprintf(stderr, "Limite máximo de tarefas ativas atingido. Tarefa %s não enfileirada.\n", task.id);
+        return;
+    }
+
+    // Se não houver tarefas ativas, inicie esta tarefa imediatamente
+    if (active_count == 0) {
+        execute_task(task);
+    } else {
+        // Se houver tarefas ativas, enfileire esta tarefa
+        if (waiting_count >= MAX_TASKS) {
+            fprintf(stderr, "Fila de espera cheia. Tarefa %s não enfileirada.\n", task.id);
+            return;
+        }
+        waiting_queue[waiting_count++] = task;
+        save_state();
+    }
 }
 
 void remove_active_task(int index) {
@@ -186,11 +218,18 @@ void remove_active_task(int index) {
     fprintf(file, "Task ID: %s, Command: %s, Execution time: %ld ms\n", active_tasks[index].task.id, active_tasks[index].task.command, execution_time);
     fclose(file);
 
+    if (waiting_count > 0) {
+        Task next_task = dequeue_task();
+        execute_task(next_task);
+    }    
+
     if (index < active_count - 1) {
         memmove(&active_tasks[index], &active_tasks[index + 1], (active_count - index - 1) * sizeof(ActiveTask));
     }
     active_count--;
     save_state();
+    
+
 }
 
 void monitor_active_tasks() {
@@ -252,6 +291,8 @@ void monitor_tasks() {
         sleep(1); // Aguardar antes de verificar novamente
     }
 }
+
+
 
 int start_server() {
     setup_communication(FIFO_PATH);

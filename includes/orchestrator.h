@@ -5,7 +5,7 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
-#define MAX_TASKS 100
+#define MAX_TASKS 2
 #define MAX_PROGS_PER_TASK 10
 #define COMMAND_LENGTH 4096
 
