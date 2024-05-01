@@ -50,7 +50,16 @@ void handle_status_command(int fifo_fd) {
         snprintf(task_info, sizeof(task_info), "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_pids[i]);
         strcat(status_message, task_info);
     }
-
+    // Adicionar o status das tarefas concluídas
+    strcat(status_message, "\nTarefas concluídas:\n");
+    FILE *completed_file = fopen("output/completed_tasks.txt", "r");
+    if (completed_file) {
+        char line[256];
+        while (fgets(line, sizeof(line), completed_file)) {
+            strcat(status_message, line);
+        }
+        fclose(completed_file);
+    }
     // Envia a mensagem de status de volta para o cliente
     if (write(fifo_fd, status_message, strlen(status_message) + 1) == -1) {
         perror("write");
@@ -210,7 +219,7 @@ void remove_active_task(int index) {
                           (now.tv_usec - active_tasks[index].start_time.tv_usec) / 1000;
 
     // Registar a tarefa num arquivo
-    FILE *file = fopen("completed_tasks.txt", "a");
+    FILE *file = fopen("output/completed_tasks.txt", "a");
     if (file == NULL) {
         perror("fopen");
         return;
