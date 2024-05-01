@@ -5,7 +5,6 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
-#define MAX_TASKS 2
 #define MAX_PROGS_PER_TASK 10
 #define COMMAND_LENGTH 4096
 
@@ -15,7 +14,6 @@ struct TaskStartTime {
     struct timeval start_time;
 };
 
-extern struct TaskStartTime task_start_times[MAX_TASKS];
 
 typedef struct {
     char id[256];
@@ -34,6 +32,12 @@ typedef struct {
     time_t start_time;
     time_t end_time;
 } CompletedTask;
+
+extern struct TaskStartTime *task_start_times;
+extern struct CompletedTask *completed_tasks;
+extern Task *waiting_queue;
+extern ActiveTask *active_tasks;
+extern pid_t *active_pids;
 
 void handle_status_command(int fifo_fd);
 

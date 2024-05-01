@@ -23,6 +23,6 @@ obj/%.o: src/%.c | folders
 
 clean:
 	if [ -p $(FIFO_PATH) ]; then rm -f $(FIFO_PATH); fi
-	rm -r obj/ orchestrator client output/ bin/ state.txt output/completed_tasks.txt
+	rm -r obj/ orchestrator client output/ bin/ state.txt
 	
 

@@ -17,18 +17,25 @@
 
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH "/tmp/" FIFO_NAME
-#define MAX_TASKS 2
 #define MAX_COMMAND_SIZE 4096
+int MAX_TASKS = 0; 
 
-CompletedTask completed_tasks[MAX_TASKS];
+//CompletedTask completed_tasks[MAX_TASKS];
 int completed_count = 0;
 
-Task waiting_queue[MAX_TASKS];
+//Task waiting_queue[MAX_TASKS];
 int waiting_count = 0;
 
-ActiveTask active_tasks[MAX_TASKS];
+//ActiveTask active_tasks[MAX_TASKS];
 int active_count = 0;
-pid_t active_pids[MAX_TASKS];
+//pid_t active_pids[MAX_TASKS];
+
+struct TaskStartTime *task_start_times;
+struct CompletedTask *completed_tasks;
+Task *waiting_queue;
+ActiveTask *active_tasks;
+pid_t *active_pids;
+
 
 pthread_mutex_t lock;
 
@@ -382,8 +389,31 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    MAX_TASKS = parallel_tasks;
+
+
+    task_start_times = malloc(MAX_TASKS * sizeof(struct TaskStartTime));
+    completed_tasks = malloc(MAX_TASKS * sizeof(CompletedTask));
+    waiting_queue = malloc(MAX_TASKS * sizeof(Task));
+    active_tasks = malloc(MAX_TASKS * sizeof(ActiveTask));
+    active_pids = malloc(MAX_TASKS * sizeof(pid_t));
+    
+
+    // Verifique se a alocação de memória foi bem-sucedida
+    if (task_start_times == NULL || completed_tasks == NULL || waiting_queue == NULL || active_tasks == NULL || active_pids == NULL) {
+        fprintf(stderr, "Erro: falha ao alocar memória para os arrays dinâmicos.\n");
+        exit(EXIT_FAILURE);
+    }
+
     // Inicie o servidor com os argumentos fornecidos
     start_server(output_folder, parallel_tasks, sched_policy);
+
+    // Libere a memória alocada dinamicamente no final do programa
+    free(task_start_times);
+    free(completed_tasks);
+    free(waiting_queue);
+    free(active_tasks);
+    free(active_pids);
 
     return 0;
 }
