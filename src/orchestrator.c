@@ -11,6 +11,8 @@
 #include <errno.h>
 #include <time.h>
 #include <pthread.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH "/tmp/" FIFO_NAME
@@ -207,20 +209,37 @@ void remove_active_task(int index) {
                           (now.tv_usec - active_tasks[index].start_time.tv_usec) / 1000;
 
     // Registar a tarefa num arquivo
-    FILE *file = fopen("task_log.txt", "a");
+    FILE *file = fopen("completed_tasks.txt", "a");
     if (file == NULL) {
         perror("fopen");
         return;
     }
-    fprintf(file, "Task ID: %s, Execution time: %ld ms\n", active_tasks[index].task.id, execution_time);
+    fprintf(file, "Task ID: %s, Command: %s, Execution time: %ld ms\n", active_tasks[index].task.id, active_tasks[index].task.command, execution_time);
     fclose(file);
 
     if (index < active_count - 1) {
         memmove(&active_tasks[index], &active_tasks[index + 1], (active_count - index - 1) * sizeof(ActiveTask));
-        memmove(&active_pids[index], &active_pids[index + 1], (active_count - index - 1) * sizeof(pid_t));
     }
     active_count--;
     save_state();
+}
+
+void monitor_active_tasks() {
+    while (1) {
+        for (int i = 0; i < active_count; i++) {
+            ActiveTask *active_task = &active_tasks[i];
+            struct timeval now;
+            gettimeofday(&now, NULL);
+            long execution_time = (now.tv_sec - active_task->start_time.tv_sec) * 1000 +
+                                  (now.tv_usec - active_task->start_time.tv_usec) / 1000;
+            if (execution_time >= active_task->task.estimated_time) {
+                // Tarefa excedeu o tempo estimado, terminá-la e movê-la para tarefas concluídas
+                kill(active_task->pid, SIGKILL);
+                remove_active_task(i);
+            }
+        }
+        usleep(10000); // Aguarda 10 milissegundos antes de verificar novamente
+    }
 }
 
 void execute_task(Task task) {
@@ -303,6 +322,13 @@ int start_server() {
     setup_communication(FIFO_PATH);
     printf("Servidor iniciado.\n");
 
+    // Iniciar uma thread para monitorar as tarefas ativas
+    pthread_t monitor_thread;
+    if (pthread_create(&monitor_thread, NULL, (void *(*)(void *))monitor_active_tasks, NULL) != 0) {
+        perror("pthread_create");
+        exit(EXIT_FAILURE);
+    }
+    
     int fifo_fd = open(FIFO_PATH, O_RDONLY);
     if (fifo_fd == -1) {
         perror("open");

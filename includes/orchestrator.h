@@ -55,6 +55,8 @@ void execute_task(Task task);
 
 void monitor_tasks();
 
+void monitor_active_tasks();
+
 int start_server();
 
 int main();
