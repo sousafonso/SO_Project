@@ -13,6 +13,7 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH "/tmp/" FIFO_NAME
@@ -110,38 +111,6 @@ void parse_client_request(const char *buffer, Task *task) {
     strncpy(task->command, command_buffer, sizeof(task->command) - 1);
     task->command[sizeof(task->command) - 1] = '\0'; // Garante o terminador nulo
 }
-
-// VERSÃO 2
-// void parse_client_request(const char *buffer, Task *task) {
-//     char execute_keyword[8];
-//     char command_buffer[MAX_COMMAND_SIZE]; // Defina um tamanho adequado para o seu comando
-
-//     // Primeiro tenta ler a palavra "execute" e o tempo estimado
-//     int num_args_scanned = sscanf(buffer, "%7s %d", execute_keyword, &task->estimated_time);
-//     if (num_args_scanned != 2 || strcmp(execute_keyword, "execute") != 0) {
-//         fprintf(stderr, "Erro: comando inválido ou tempo estimado ausente.\n");
-//         return;
-//     }
-
-//     // Após ler o tempo estimado, move o buffer para frente, além do tempo
-//     buffer = strchr(buffer, ' '); // Encontra o espaço após "execute"
-//     buffer = strchr(buffer + 1, ' '); // Encontra o espaço após o tempo estimado
-//     if (!buffer) {
-//         fprintf(stderr, "Erro: formato de comando inválido.\n");
-//         return;
-//     }
-//     buffer++; // Avança para o primeiro caractere do comando
-
-//     // Agora, tenta ler o comando entre aspas
-//     if (sscanf(buffer, "\"%[^\"]\"", command_buffer) != 1) {
-//         fprintf(stderr, "Erro: comando ausente ou não entre aspas.\n");
-//         return;
-//     }
-
-//     // Copia o comando para a estrutura Task
-//     strncpy(task->command, command_buffer, sizeof(task->command) - 1);
-//     task->command[sizeof(task->command) - 1] = '\0'; // Garante o terminador nulo
-// }
 
 void save_state() {
     FILE *file = fopen("state.txt", "w");
@@ -283,40 +252,6 @@ void monitor_tasks() {
         sleep(1); // Aguardar antes de verificar novamente
     }
 }
-
-// int start_server() {
-//     setup_communication(PIPE_NAME);
-//     printf("Servidor iniciado.\n");
-
-//     int fifo_fd = open(PIPE_NAME, O_RDONLY);
-//     if (fifo_fd == -1) {
-//         perror("open");
-//         exit(EXIT_FAILURE);
-//     }
-
-//     char buffer[1024];
-//     ssize_t num_read;
-
-//     while (1) {
-//         num_read = read(fifo_fd, buffer, sizeof(buffer) - 1);
-//         if (num_read == -1) {
-//             perror("read");
-//             continue;
-//         } else if (num_read == 0) {
-//             // Nenhum dado disponível para ler, continue para a próxima iteração
-//             continue;
-//         }
-
-//         buffer[num_read] = '\0'; // Terminar o buffer com nulo
-
-//         Task task;
-//         parse_client_request(buffer, &task);
-//         enqueue_task(task);
-//     }
-
-//     close(fifo_fd);
-//     return 0;
-// }
 
 int start_server() {
     setup_communication(FIFO_PATH);
