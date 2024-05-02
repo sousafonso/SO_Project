@@ -17,8 +17,7 @@
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH "/tmp/" FIFO_NAME
 #define MAX_COMMAND_SIZE 4096
-int MAX_TASKS = 0;
-static int task_counter = 0; // Contador de tarefas para atribuir IDs únicos 
+int MAX_TASKS = 0; 
 
 //CompletedTask completed_tasks[MAX_TASKS];
 int completed_count = 0;
@@ -180,6 +179,27 @@ Task dequeue_task() {
 }
 
 void enqueue_task(Task task) {
+
+    static int task_counter = 0;
+
+    // Calcular o tamanho necessário para o ID da tarefa
+    int id_length = snprintf(NULL, 0, "%d", task_counter) + 1;
+
+    // Alocar memória para o ID da tarefa e gerar o ID
+    char *new_id = (char *)malloc(id_length);
+    if (new_id == NULL) {
+        fprintf(stderr, "Erro: falha ao alocar memória para o ID da tarefa.\n");
+        exit(EXIT_FAILURE);
+    }
+    snprintf(new_id, id_length, "%d", task_counter);
+
+    // Copiar o ID gerado para a tarefa
+    strncpy(task.id, new_id, sizeof(task.id) - 1);
+    task.id[sizeof(task.id) - 1] = '\0'; // Garantir terminador nulo
+
+    // Incrementar o contador para a próxima tarefa
+    task_counter++;
+
 
     // Verificar se a tarefa recém-adicionada tem um tempo de execução estimado menor
     if (active_count > 0 && task.estimated_time < active_tasks[0].task.estimated_time) {
