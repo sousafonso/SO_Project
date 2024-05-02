@@ -13,7 +13,6 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <signal.h>
 
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH "/tmp/" FIFO_NAME
@@ -186,10 +185,11 @@ void enqueue_task(Task task) {
         fprintf(stderr, "Tarefa de maior prioridade adicionada. Interrompendo tarefa ativa...\n");
 
         // Interromper a tarefa ativa atual
-        Task active_task = active_tasks[0].task;
-        kill(active_tasks[0].pid, SIGKILL);
-        remove_active_task(0);
-        waiting_queue[waiting_count++] = active_task;
+        ActiveTask active_task = active_tasks[0];
+        remove_active_task(0); // Remove a tarefa ativa sem matar o processo
+
+        // Coloca a tarefa ativa na fila de espera
+        waiting_queue[waiting_count++] = active_task.task;
     }
 
     if (active_count >= MAX_TASKS) {
@@ -273,10 +273,14 @@ void execute_task(Task task) {
         perror("fork");
         exit(EXIT_FAILURE);
     } else if (pid == 0) {
-        // Processo filho: executar o comando da tarefa
-        execlp("sh", "sh", "-c", task.command, NULL);
-        perror("execlp");
-        exit(EXIT_FAILURE); // Em caso de falha na execução do comando
+        // Processo filho: executar o comando da tarefa usando system
+        printf("Executando tarefa: %s\n", task.command);
+        int result = system(task.command);
+        if (result == -1) {
+            perror("system");
+            exit(EXIT_FAILURE); // Em caso de falha na execução do comando
+        }
+        exit(EXIT_SUCCESS); // Saída bem-sucedida do processo filho
     } else {
         // Processo pai: adicionar tarefa à lista de tarefas ativas
         ActiveTask active_task = {.task = task, .pid = pid, .start_time = {0}};
@@ -284,6 +288,7 @@ void execute_task(Task task) {
         add_active_task(active_task);
     }
 }
+
 
 void monitor_tasks() {
     while (1) {
