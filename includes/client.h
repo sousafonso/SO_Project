@@ -1,7 +1,7 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-void send_command_to_server(const char *command);
+int check_fifo_exists(const char* fifo_path);
 
 int main(int argc, char *argv[]);
 
