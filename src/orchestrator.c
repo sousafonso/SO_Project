@@ -13,6 +13,11 @@
 #include <pthread.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdbool.h> // Adicione esta inclusão para usar o tipo bool
+
+// Defina uma variável global para indicar se o servidor deve continuar em execução
+bool server_running = true;
+
 
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH "/tmp/" FIFO_NAME
@@ -61,7 +66,7 @@ void handle_status_command(int fifo_fd) {
     int completed_file = open("output/completed_tasks.txt", O_RDONLY);
     if (completed_file != -1) {
         char line[256];
-	ssize_t n;
+        ssize_t n;
         while ((n = read(completed_file, line, sizeof(line) - 1)) > 0) {
             line[n] = '\0';
             strcat(status_message, line);
@@ -135,25 +140,31 @@ void save_state() {
         perror("open");
         exit(EXIT_FAILURE);
     }
-    FILE *file = fdopen(fd, "w");
-    if (file == NULL) {
-        perror("fdopen");
+
+    char buffer[4096]; // Buffer para armazenar os dados a serem escritos
+
+    // Escrever tarefas em espera
+    int offset = sprintf(buffer, "Waiting tasks:\n");
+    for (int i = 0; i < waiting_count; i++) {
+        offset += sprintf(buffer + offset, "Task ID: %s, Command: %s\n", waiting_queue[i].id, waiting_queue[i].command);
+    }
+
+    // Escrever tarefas ativas
+    offset += sprintf(buffer + offset, "\nActive tasks:\n");
+    for (int i = 0; i < active_count; i++) {
+        offset += sprintf(buffer + offset, "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_tasks[i].pid);
+    }
+
+    // Escrever o conteúdo do buffer no arquivo
+    if (write(fd, buffer, offset) == -1) {
+        perror("write");
         close(fd);
         exit(EXIT_FAILURE);
     }
 
-    fprintf(file, "Waiting tasks:\n");
-    for (int i = 0; i < waiting_count; i++) {
-        fprintf(file, "Task ID: %s, Command: %s\n", waiting_queue[i].id, waiting_queue[i].command);
-    }
-
-    fprintf(file, "\nActive tasks:\n");
-    for (int i = 0; i < active_count; i++) {
-        fprintf(file, "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_tasks[i].pid);
-    }
-
-    fclose(file);
+    close(fd);
 }
+
 /*
 void enqueue_task(Task task) {
     if (waiting_count >= MAX_TASKS) {
@@ -187,7 +198,6 @@ Task dequeue_task() {
 }
 
 void enqueue_task(Task task) {
-
     static int task_counter = 0;
 
     // Calcular o tamanho necessário para o ID da tarefa
@@ -208,30 +218,32 @@ void enqueue_task(Task task) {
     // Incrementar o contador para a próxima tarefa
     task_counter++;
 
-
-    // Verificar se a tarefa recém-adicionada tem um tempo de execução estimado menor
-    if (active_count > 0 && task.estimated_time < active_tasks[0].task.estimated_time) {
-        fprintf(stderr, "Tarefa de maior prioridade adicionada. Interrompendo tarefa ativa...\n");
-
-        // Interromper a tarefa ativa atual
-        ActiveTask active_task = active_tasks[0];
-        remove_active_task(0); // Remove a tarefa ativa sem matar o processo
-
-        // Coloca a tarefa ativa na fila de espera
-        waiting_queue[waiting_count++] = active_task.task;
+    // Encontrar a posição de inserção da tarefa com base no tempo estimado
+    int insert_index = 0;
+    while (insert_index < waiting_count && task.estimated_time > waiting_queue[insert_index].estimated_time) {
+        insert_index++;
     }
 
     // Se não houver tarefas ativas, inicie esta tarefa imediatamente
     if (active_count < MAX_TASKS) {
         execute_task(task);
     } else {
-
-        fprintf(stderr, "Fila de tarefas ativas cheia. Tarefa %s enfileirada.\n", task.id);
-        waiting_queue[waiting_count++] = task;
-        return;
-        save_state();
+        // Se a fila de espera não estiver cheia, insira a tarefa na posição correta
+        if (waiting_count < MAX_TASKS) {
+            // Deslocar as tarefas para abrir espaço para a nova tarefa
+            for (int i = waiting_count; i > insert_index; i--) {
+                waiting_queue[i] = waiting_queue[i - 1];
+            }
+            // Inserir a nova tarefa na posição correta
+            waiting_queue[insert_index] = task;
+            waiting_count++;
+            fprintf(stderr, "Tarefa %s enfileirada para espera.\n", task.id);
+            save_state();
+        }
     }
+    
 }
+
 
 void remove_active_task(int index) {
     if (index < 0 || index >= active_count) {
@@ -247,20 +259,31 @@ void remove_active_task(int index) {
     long execution_time = (now.tv_sec - active_tasks[index].start_time.tv_sec) * 1000 +
                           (now.tv_usec - active_tasks[index].start_time.tv_usec) / 1000;
 
-    // Registar a tarefa num arquivo
+    // Formatar os dados em uma string
+    char buffer[4096];
+    int offset = sprintf(buffer, "Task ID: %s, Command: %s, Execution time: %ld ms\n", active_tasks[index].task.id, active_tasks[index].task.command, execution_time);
+
+    // Abrir ou criar o arquivo completed_tasks.txt e anexar os dados
     int fd = open("output/completed_tasks.txt", O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
     if (fd == -1) {
         perror("open");
         return;
     }
-    FILE *file = fdopen(fd, "a");
-    if (file == NULL) {
-        perror("fdopen");
+
+    // Escrever os dados no arquivo
+    if (write(fd, buffer, offset) == -1) {
+        perror("write");
         close(fd);
         return;
     }
-    fprintf(file, "Task ID: %s, Command: %s, Execution time: %ld ms\n", active_tasks[index].task.id, active_tasks[index].task.command, execution_time);
-    fclose(file);
+
+    // Fechar o arquivo
+    close(fd);
+
+    // Remover o PID correspondente
+    for (int i = index; i < active_count - 1; i++) {
+        active_pids[i] = active_pids[i + 1];
+    }
 
     if (waiting_count > 0) {
         Task next_task = dequeue_task();
@@ -272,32 +295,38 @@ void remove_active_task(int index) {
     }
     active_count--;
     save_state();
-    
-
 }
 
+
+
 void monitor_active_tasks() {
-    // Enquanto houver tarefas ativas para monitorar
-    while (active_count > 0) {
-        // Aguardar 1 segundo antes de verificar novamente
-        sleep(1);
+    // Enquanto o servidor estiver em execução
+    while (server_running) {
+        // Se houver tarefas ativas para monitorar
+        if (active_count > 0) {
+            // Aguardar 1 segundo antes de verificar novamente
+            sleep(1);
 
-        // Obter o tempo atual
-        struct timeval now;
-        gettimeofday(&now, NULL);
+            // Obter o tempo atual
+            struct timeval now;
+            gettimeofday(&now, NULL);
 
-        // Iterar sobre as tarefas ativas
-        for (int i = 0; i < active_count; i++) {
-            ActiveTask *active_task = &active_tasks[i];
-            
-            // Calcular o tempo de execução da tarefa
-            long execution_time = (now.tv_sec - active_task->start_time.tv_sec) * 1000 +
-                                  (now.tv_usec - active_task->start_time.tv_usec) / 1000;
+            // Iterar sobre as tarefas ativas
+            for (int i = 0; i < active_count; i++) {
+                ActiveTask *active_task = &active_tasks[i];
+                
+                // Calcular o tempo de execução da tarefa
+                long execution_time = (now.tv_sec - active_task->start_time.tv_sec) * 1000 +
+                                      (now.tv_usec - active_task->start_time.tv_usec) / 1000;
 
-            // Se a tarefa excedeu o tempo estimado, removê-la da lista de tarefas ativas
-            if (execution_time >= active_task->task.estimated_time) {
-                remove_active_task(i);
+                // Se a tarefa excedeu o tempo estimado, removê-la da lista de tarefas ativas
+                if (execution_time >= active_task->task.estimated_time) {
+                    remove_active_task(i);
+                }
             }
+        } else {
+            // Se não houver tarefas ativas, aguarde um pouco antes de verificar novamente
+            sleep(1);
         }
     }
 }
@@ -310,50 +339,49 @@ void execute_task(Task task) {
         perror("fork");
         exit(EXIT_FAILURE);
     } else if (pid == 0) {
-        // Processo filho: executar o comando da tarefa usando system
-        printf("Executando tarefa: %s\n", task.command);
-        int result = system(task.command);
-        if (result == -1) {
-            perror("system");
-            exit(EXIT_FAILURE); // Em caso de falha na execução do comando
-        }
-        exit(EXIT_SUCCESS); // Saída bem-sucedida do processo filho
+        // Processo filho: executar o comando da tarefa
+        execlp("sh", "sh", "-c", task.command, NULL);
+        perror("execlp");
+        exit(EXIT_FAILURE); // Em caso de falha na execução do comando
     } else {
         // Processo pai: adicionar tarefa à lista de tarefas ativas
         ActiveTask active_task = {.task = task, .pid = pid, .start_time = {0}};
         gettimeofday(&active_task.start_time, NULL);
         add_active_task(active_task);
+        printf("Nova tarefa iniciada: Task ID: %s, Command: %s, PID: %d\n", task.id, task.command, pid); // Apenas para debug
     }
 }
 
 
 void monitor_tasks() {
-    // Enquanto houver tarefas ativas para monitorar
-    while (active_count > 0) {
-        // Iterar sobre as tarefas ativas
-        for (int i = 0; i < active_count; i++) {
-            int status;
-            pid_t pid = waitpid(active_pids[i], &status, WNOHANG);
-            if (pid == -1) {
-                perror("waitpid");
-                exit(EXIT_FAILURE);
-            } else if (pid > 0) {
-                // Processo filho terminou
-                remove_active_task(i);
+    // Enquanto o servidor estiver em execução
+    while (server_running) {
+        // Se houver tarefas ativas para monitorar
+        if (active_count > 0) {
+            // Iterar sobre as tarefas ativas
+            for (int i = 0; i < active_count; i++) {
+                int status;
+                pid_t pid = waitpid(active_pids[i], &status, WNOHANG);
+                if (pid == -1) {
+                    perror("waitpid");
+                    exit(EXIT_FAILURE);
+                } else if (pid > 0) {
+                    // Processo filho terminou
+                    remove_active_task(i);
+                }
             }
         }
 
-        // Enquanto houver tarefas na fila de espera e espaço para tarefas ativas
-        while (waiting_count > 0 && active_count < MAX_TASKS) {
+        // Se ainda houver tarefas na fila de espera e espaço para tarefas ativas
+        if (waiting_count > 0 && active_count < MAX_TASKS) {
             Task next_task = dequeue_task();
             execute_task(next_task);
         }
 
-        // Aguardar 1 segundo antes de verificar novamente
+        // Aguarde um pouco antes de verificar novamente
         sleep(1);
     }
 }
-
 
 
 int start_server() {
