@@ -38,6 +38,40 @@ pid_t *active_pids;
 
 pthread_mutex_t lock;
 
+// void handle_status_command(int fifo_fd) {
+//     char status_message[4096] = "Tarefas em espera e ativas:\n";
+
+//     // Adicionar o status das tarefas em espera ao status_message
+//     strcat(status_message, "Tarefas em espera:\n");
+//     for (int i = 0; i < waiting_count; i++) {
+//         char task_info[256];
+//         snprintf(task_info, sizeof(task_info), "Task ID: %s, Command: %s\n", waiting_queue[i].id, waiting_queue[i].command);
+//         strcat(status_message, task_info);
+//     }
+
+//     // Adicionar o status das tarefas ativas ao status_message
+//     strcat(status_message, "\nTarefas ativas:\n");
+//     for (int i = 0; i < active_count; i++) {
+//         char task_info[256];
+//         snprintf(task_info, sizeof(task_info), "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_pids[i]);
+//         strcat(status_message, task_info);
+//     }
+//     // Adicionar o status das tarefas concluídas
+//     strcat(status_message, "\nTarefas concluídas:\n");
+//     FILE *completed_file = fopen("output/completed_tasks.txt", "r");
+//     if (completed_file) {
+//         char line[256];
+//         while (fgets(line, sizeof(line), completed_file)) {
+//             strcat(status_message, line);
+//         }
+//         fclose(completed_file);
+//     }
+//     // Envia a mensagem de status de volta para o cliente
+//     if (write(fifo_fd, status_message, strlen(status_message) + 1) == -1) {
+//         perror("write");
+//     }
+// }
+
 void handle_status_command(int fifo_fd) {
     char status_message[4096] = "Tarefas em espera e ativas:\n";
 
@@ -58,13 +92,15 @@ void handle_status_command(int fifo_fd) {
     }
     // Adicionar o status das tarefas concluídas
     strcat(status_message, "\nTarefas concluídas:\n");
-    FILE *completed_file = fopen("output/completed_tasks.txt", "r");
-    if (completed_file) {
+    int completed_file = open("output/completed_tasks.txt", O_RDONLY);
+    if (completed_file != -1) {
         char line[256];
-        while (fgets(line, sizeof(line), completed_file)) {
+        ssize_t n;
+        while ((n = read(completed_file, line, sizeof(line) - 1)) > 0) {
+            line[n] = '\0';
             strcat(status_message, line);
         }
-        fclose(completed_file);
+        close(completed_file);
     }
     // Envia a mensagem de status de volta para o cliente
     if (write(fifo_fd, status_message, strlen(status_message) + 1) == -1) {
@@ -127,10 +163,35 @@ void parse_client_request(const char *buffer, Task *task) {
     task->command[sizeof(task->command) - 1] = '\0'; // Garante o terminador nulo
 }
 
+// void save_state() {
+//     FILE *file = fopen("state.txt", "w");
+//     if (file == NULL) {
+//         perror("fopen");
+//         exit(EXIT_FAILURE);
+//     }
+
+//     fprintf(file, "Waiting tasks:\n");
+//     for (int i = 0; i < waiting_count; i++) {
+//         fprintf(file, "Task ID: %s, Command: %s\n", waiting_queue[i].id, waiting_queue[i].command);
+//     }
+
+//     fprintf(file, "\nActive tasks:\n");
+//     for (int i = 0; i < active_count; i++) {
+//         fprintf(file, "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_tasks[i].pid);
+//     }
+
+//     fclose(file);
+// }
 void save_state() {
-    FILE *file = fopen("state.txt", "w");
+    int fd = open("state.txt", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (fd == -1) {
+        perror("open");
+        exit(EXIT_FAILURE);
+    }
+    FILE *file = fdopen(fd, "w");
     if (file == NULL) {
-        perror("fopen");
+        perror("fdopen");
+        close(fd);
         exit(EXIT_FAILURE);
     }
 
@@ -146,6 +207,7 @@ void save_state() {
 
     fclose(file);
 }
+
 /*
 void enqueue_task(Task task) {
     if (waiting_count >= MAX_TASKS) {
@@ -232,6 +294,42 @@ void enqueue_task(Task task) {
     }
 }
 
+// void remove_active_task(int index) {
+//     if (index < 0 || index >= active_count) {
+//         fprintf(stderr, "Índice de tarefa ativa inválido.\n");
+//         return;
+//     }
+
+//     // Obter o tempo atual
+//     struct timeval now;
+//     gettimeofday(&now, NULL);
+
+//     // Calcular o tempo de execução da tarefa
+//     long execution_time = (now.tv_sec - active_tasks[index].start_time.tv_sec) * 1000 +
+//                           (now.tv_usec - active_tasks[index].start_time.tv_usec) / 1000;
+
+//     // Registar a tarefa num arquivo
+//     FILE *file = fopen("output/completed_tasks.txt", "a");
+//     if (file == NULL) {
+//         perror("fopen");
+//         return;
+//     }
+//     fprintf(file, "Task ID: %s, Command: %s, Execution time: %ld ms\n", active_tasks[index].task.id, active_tasks[index].task.command, execution_time);
+//     fclose(file);
+
+//     if (waiting_count > 0) {
+//         Task next_task = dequeue_task();
+//         execute_task(next_task);
+//     }    
+
+//     if (index < active_count - 1) {
+//         memmove(&active_tasks[index], &active_tasks[index + 1], (active_count - index - 1) * sizeof(ActiveTask));
+//     }
+//     active_count--;
+//     save_state();
+
+// }
+
 void remove_active_task(int index) {
     if (index < 0 || index >= active_count) {
         fprintf(stderr, "Índice de tarefa ativa inválido.\n");
@@ -247,9 +345,15 @@ void remove_active_task(int index) {
                           (now.tv_usec - active_tasks[index].start_time.tv_usec) / 1000;
 
     // Registar a tarefa num arquivo
-    FILE *file = fopen("output/completed_tasks.txt", "a");
+    int fd = open("output/completed_tasks.txt", O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
+    if (fd == -1) {
+        perror("open");
+        return;
+    }
+    FILE *file = fdopen(fd, "a");
     if (file == NULL) {
-        perror("fopen");
+        perror("fdopen");
+        close(fd);
         return;
     }
     fprintf(file, "Task ID: %s, Command: %s, Execution time: %ld ms\n", active_tasks[index].task.id, active_tasks[index].task.command, execution_time);
@@ -265,8 +369,6 @@ void remove_active_task(int index) {
     }
     active_count--;
     save_state();
-    
-
 }
 
 void monitor_active_tasks() {
