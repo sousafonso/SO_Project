@@ -10,7 +10,6 @@
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
-#include <pthread.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdbool.h> // Adicione esta inclusão para usar o tipo bool
