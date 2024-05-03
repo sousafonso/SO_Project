@@ -395,17 +395,72 @@ void monitor_tasks() {
 }
 
 
+// int start_server() {
+//     setup_communication(FIFO_PATH);
+//     printf("Servidor iniciado.\n");
+
+//     // Iniciar uma thread para monitorar as tarefas ativas
+//     pthread_t monitor_thread;
+//     if (pthread_create(&monitor_thread, NULL, (void *(*)(void *))monitor_active_tasks, NULL) != 0) {
+//         perror("pthread_create");
+//         exit(EXIT_FAILURE);
+//     }
+    
+//     int fifo_fd = open(FIFO_PATH, O_RDONLY);
+//     if (fifo_fd == -1) {
+//         perror("open");
+//         exit(EXIT_FAILURE);
+//     }
+
+//     char buffer[1024];
+//     ssize_t num_read;
+
+//     while (1) {
+//         num_read = read(fifo_fd, buffer, sizeof(buffer) - 1);
+//         if (num_read == -1) {
+//             perror("read");
+//             continue;
+//         } else if (num_read == 0) {
+//             continue; 
+//         }
+
+//         buffer[num_read] = '\0'; // Terminar o buffer com nulo
+
+//         if (strcmp(buffer, "status") == 0) {
+//             int write_fd = open(FIFO_PATH, O_WRONLY);
+//             if (write_fd == -1) {
+//                 perror("open");
+//                 continue;
+//             }
+//             handle_status_command(write_fd);
+//             close(write_fd);
+//         } else {
+//             Task task;
+//             parse_client_request(buffer, &task);
+//             enqueue_task(task);
+//         }
+//     }
+
+//     close(fifo_fd);
+//     return 0;
+// }
+
 int start_server() {
     setup_communication(FIFO_PATH);
     printf("Servidor iniciado.\n");
 
-    // Iniciar uma thread para monitorar as tarefas ativas
-    pthread_t monitor_thread;
-    if (pthread_create(&monitor_thread, NULL, (void *(*)(void *))monitor_active_tasks, NULL) != 0) {
-        perror("pthread_create");
+    // Iniciar um processo para monitorar as tarefas ativas
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork");
         exit(EXIT_FAILURE);
+    } else if (pid == 0) {
+        // Este é o processo filho
+        monitor_active_tasks();
+        exit(EXIT_SUCCESS);
     }
-    
+
+    // Resto do código é o mesmo
     int fifo_fd = open(FIFO_PATH, O_RDONLY);
     if (fifo_fd == -1) {
         perror("open");
