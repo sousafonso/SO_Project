@@ -270,42 +270,46 @@ void remove_active_task(int index) {
     long execution_time = (now.tv_sec - active_tasks[index].start_time.tv_sec) * 1000 +
                           (now.tv_usec - active_tasks[index].start_time.tv_usec) / 1000;
 
-    // Formatar os dados em uma string
-    char buffer[4096];
-    int offset = sprintf(buffer, "Task ID: %s, Command: %s, Execution time: %ld ms\n", active_tasks[index].task.id, active_tasks[index].task.command, execution_time);
+    // Se a tarefa excedeu o tempo estimado, mova-a para a lista de tarefas concluídas
+    if (execution_time >= active_tasks[index].task.estimated_time) {
+        // Formatar os dados em uma string
+        char buffer[4096];
+        int offset = sprintf(buffer, "Task ID: %s, Command: %s, Execution time: %ld ms\n", 
+                             active_tasks[index].task.id, active_tasks[index].task.command, execution_time);
 
-    // Abrir ou criar o arquivo completed_tasks.txt e anexar os dados
-    int fd = open("output/completed_tasks.txt", O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
-    if (fd == -1) {
-        perror("open");
-        return;
-    }
+        // Abrir ou criar o arquivo completed_tasks.txt e anexar os dados
+        int fd = open("output/completed_tasks.txt", O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
+        if (fd == -1) {
+            perror("open");
+            return;
+        }
 
-    // Escrever os dados no arquivo
-    if (write(fd, buffer, offset) == -1) {
-        perror("write");
+        // Escrever os dados no arquivo
+        if (write(fd, buffer, offset) == -1) {
+            perror("write");
+            close(fd);
+            return;
+        }
+
+        // Fechar o arquivo
         close(fd);
-        return;
+
+        // Remover o PID correspondente
+        for (int i = index; i < active_count - 1; i++) {
+            active_pids[i] = active_pids[i + 1];
+        }
+
+        if (waiting_count > 0) {
+            Task next_task = dequeue_task();
+            execute_task(next_task);
+        }    
+
+        if (index < active_count - 1) {
+            memmove(&active_tasks[index], &active_tasks[index + 1], (active_count - index - 1) * sizeof(ActiveTask));
+        }
+        active_count--;
+        save_state();
     }
-
-    // Fechar o arquivo
-    close(fd);
-
-    // Remover o PID correspondente
-    for (int i = index; i < active_count - 1; i++) {
-        active_pids[i] = active_pids[i + 1];
-    }
-
-    if (waiting_count > 0) {
-        Task next_task = dequeue_task();
-        execute_task(next_task);
-    }    
-
-    if (index < active_count - 1) {
-        memmove(&active_tasks[index], &active_tasks[index + 1], (active_count - index - 1) * sizeof(ActiveTask));
-    }
-    active_count--;
-    save_state();
 }
 
 
@@ -494,11 +498,25 @@ int start_server() {
             parse_client_request(buffer, &task);
             enqueue_task(task);
         }
+
+        // Verificar se alguma tarefa ativa excedeu o tempo estimado
+        for (int i = 0; i < active_count; i++) {
+            ActiveTask *active_task = &active_tasks[i];
+            struct timeval now;
+            gettimeofday(&now, NULL);
+            long execution_time = (now.tv_sec - active_task->start_time.tv_sec) * 1000 +
+                                  (now.tv_usec - active_task->start_time.tv_usec) / 1000;
+            if (execution_time >= active_task->task.estimated_time) {
+                // Remover a tarefa ativa e movê-la para a lista de tarefas concluídas
+                remove_active_task(i);
+            }
+        }
     }
 
     close(fifo_fd);
     return 0;
 }
+
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
