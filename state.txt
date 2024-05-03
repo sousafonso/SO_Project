@@ -1,7 +1,0 @@
-Waiting tasks:
-
-Active tasks:
-Task ID: 0, Command: ls -l, PID: 26720
-Task ID: 1, Command: ls -l, PID: 26821
-Task ID: 2, Command: /bin/ls -l /home/user, PID: 26955
-Task ID: 3, Command: /bin/ls -l /home/user, PID: 27032
