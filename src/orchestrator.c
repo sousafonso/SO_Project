@@ -41,7 +41,7 @@ ActiveTask *active_tasks;
 pid_t *active_pids;
 
 
-pthread_mutex_t lock;
+// pthread_mutex_t lock;
 
 void handle_status_command(int fifo_fd) {
     char status_message[4096] = "Tarefas em espera e ativas:\n";
@@ -79,12 +79,24 @@ void handle_status_command(int fifo_fd) {
     }
 }
 
+// void add_active_task(ActiveTask active_task) {
+//     pthread_mutex_lock(&lock);
+//     active_tasks[active_count] = active_task;
+//     active_pids[active_count] = active_task.pid;
+//     active_count++;
+//     pthread_mutex_unlock(&lock);
+// }
+
 void add_active_task(ActiveTask active_task) {
-    pthread_mutex_lock(&lock);
+    if (active_count >= MAX_TASKS) {
+        fprintf(stderr, "Número máximo de tarefas ativas atingido.\n");
+        return;
+    }
+
     active_tasks[active_count] = active_task;
     active_pids[active_count] = active_task.pid;
     active_count++;
-    pthread_mutex_unlock(&lock);
+    save_state();
 }
 
 void setup_communication(const char *fifo_name) {
