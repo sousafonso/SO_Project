@@ -57,11 +57,9 @@ void remove_active_task(int index);
 
 void execute_task(Task task);
 
-void monitor_tasks();
-
 void monitor_active_tasks();
 
-int start_server();
+void start_server(const char *output_folder, int parallel_tasks, const char *sched_policy);
 
 int main();
 

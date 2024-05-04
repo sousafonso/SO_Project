@@ -9,29 +9,19 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <errno.h>
-#include <time.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <stdbool.h> // Adicione esta inclusão para usar o tipo bool
+#include <stdbool.h>
 
 // Defina uma variável global para indicar se o servidor deve continuar em execução
 bool server_running = true;
-
 
 #define FIFO_NAME "orchestrator_fifo"
 #define FIFO_PATH "/tmp/" FIFO_NAME
 #define MAX_COMMAND_SIZE 4096
 int MAX_TASKS = 0; 
 
-//CompletedTask completed_tasks[MAX_TASKS];
 int completed_count = 0;
-
-//Task waiting_queue[MAX_TASKS];
 int waiting_count = 0;
-
-//ActiveTask active_tasks[MAX_TASKS];
 int active_count = 0;
-//pid_t active_pids[MAX_TASKS];
 
 struct TaskStartTime *task_start_times;
 struct CompletedTask *completed_tasks;
@@ -57,6 +47,7 @@ void handle_status_command(int fifo_fd) {
         snprintf(task_info, sizeof(task_info), "Task ID: %s, Command: %s, PID: %d\n", active_tasks[i].task.id, active_tasks[i].task.command, active_pids[i]);
         strcat(status_message, task_info);
     }
+
     // Adicionar o status das tarefas concluídas
     strcat(status_message, "\nTarefas concluídas:\n");
     int completed_file = open("output/completed_tasks.txt", O_RDONLY);
@@ -69,6 +60,7 @@ void handle_status_command(int fifo_fd) {
         }
         close(completed_file);
     }
+
     // Envia a mensagem de status de volta para o cliente
     if (write(fifo_fd, status_message, strlen(status_message) + 1) == -1) {
         perror("write");
@@ -104,7 +96,7 @@ void parse_client_request(const char *buffer, Task *task) {
 
     char execute_keyword[8];
     char time_keyword[3];
-    char command_buffer[300]; // Defina um tamanho adequado para o seu comando
+    char command_buffer[300];
 
     // Primeiro tenta ler a palavra "execute" e o tempo estimado
     int num_args_scanned = sscanf(buffer, "%7s %d %2s", execute_keyword, &task->estimated_time, time_keyword);
@@ -114,14 +106,14 @@ void parse_client_request(const char *buffer, Task *task) {
     }
 
     // Após ler o tempo estimado, move o buffer para frente, além do tempo
-    buffer = strchr(buffer, ' '); // Encontra o espaço após "execute"
-    buffer = strchr(buffer + 1, ' '); // Encontra o espaço após o tempo estimado
-    buffer = strchr(buffer + 1, ' '); // Encontra o espaço após "-u" ou "-p"
+    buffer = strchr(buffer, ' ');
+    buffer = strchr(buffer + 1, ' ');
+    buffer = strchr(buffer + 1, ' ');
     if (!buffer) {
         fprintf(stderr, "Erro: formato de comando inválido.\n");
         return;
     }
-    buffer++; // Avança para o primeiro caractere do comando
+    buffer++;
 
     // Agora, tenta ler o comando entre aspas
     if (sscanf(buffer, "\"%[^\"]\"", command_buffer) != 1) {
@@ -131,7 +123,7 @@ void parse_client_request(const char *buffer, Task *task) {
 
     // Copia o comando para a estrutura Task
     strncpy(task->command, command_buffer, sizeof(task->command) - 1);
-    task->command[sizeof(task->command) - 1] = '\0'; // Garante o terminador nulo
+    task->command[sizeof(task->command) - 1] = '\0'; 
 }
 
 void save_state() {
@@ -141,7 +133,7 @@ void save_state() {
         exit(EXIT_FAILURE);
     }
 
-    char buffer[4096]; // Buffer para armazenar os dados a serem escritos
+    char buffer[4096];
 
     // Escrever tarefas em espera
     int offset = sprintf(buffer, "Waiting tasks:\n");
@@ -183,10 +175,8 @@ Task dequeue_task() {
 void enqueue_task(Task task) {
     static int task_counter = 0;
 
-    // Calcular o tamanho necessário para o ID da tarefa
     int id_length = snprintf(NULL, 0, "%d", task_counter) + 1;
 
-    // Alocar memória para o ID da tarefa e gerar o ID
     char *new_id = (char *)malloc(id_length);
     if (new_id == NULL) {
         fprintf(stderr, "Erro: falha ao alocar memória para o ID da tarefa.\n");
@@ -194,39 +184,30 @@ void enqueue_task(Task task) {
     }
     snprintf(new_id, id_length, "%d", task_counter);
 
-    // Copiar o ID gerado para a tarefa
     strncpy(task.id, new_id, sizeof(task.id) - 1);
-    task.id[sizeof(task.id) - 1] = '\0'; // Garantir terminador nulo
+    task.id[sizeof(task.id) - 1] = '\0'; 
 
-    // Incrementar o contador para a próxima tarefa
     task_counter++;
 
-    // Encontrar a posição de inserção da tarefa com base no tempo estimado
     int insert_index = 0;
     while (insert_index < waiting_count && task.estimated_time > waiting_queue[insert_index].estimated_time) {
         insert_index++;
     }
 
-    // Se não houver tarefas ativas, inicie esta tarefa imediatamente
     if (active_count < MAX_TASKS) {
         execute_task(task);
     } else {
-        // Se a fila de espera não estiver cheia, insira a tarefa na posição correta
         if (waiting_count < MAX_TASKS) {
-            // Deslocar as tarefas para abrir espaço para a nova tarefa
             for (int i = waiting_count; i > insert_index; i--) {
                 waiting_queue[i] = waiting_queue[i - 1];
             }
-            // Inserir a nova tarefa na posição correta
             waiting_queue[insert_index] = task;
             waiting_count++;
             fprintf(stderr, "Tarefa %s enfileirada para espera.\n", task.id);
             save_state();
         }
     }
-    
 }
-
 
 void remove_active_task(int index) {
     if (index < 0 || index >= active_count) {
@@ -234,46 +215,37 @@ void remove_active_task(int index) {
         return;
     }
 
-    // Obter o tempo atual
     struct timeval now;
     gettimeofday(&now, NULL);
 
-    // Calcular o tempo de execução da tarefa
     long execution_time = (now.tv_sec - active_tasks[index].start_time.tv_sec) * 1000 +
                           (now.tv_usec - active_tasks[index].start_time.tv_usec) / 1000;
 
-    // Se a tarefa excedeu o tempo estimado, mova-a para a lista de tarefas concluídas
     if (execution_time >= active_tasks[index].task.estimated_time) {
-        // Formatar os dados em uma string
         char buffer[4096];
         int offset = sprintf(buffer, "Task ID: %s, Command: %s, Execution time: %ld ms\n", 
                              active_tasks[index].task.id, active_tasks[index].task.command, execution_time);
 
-        // Abrir ou criar o arquivo completed_tasks.txt e anexar os dados
         int fd = open("output/completed_tasks.txt", O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
         if (fd == -1) {
             perror("open");
             return;
         }
 
-        // Escrever os dados no arquivo
         if (write(fd, buffer, offset) == -1) {
             perror("write");
             close(fd);
             return;
         }
 
-        // Fechar o arquivo
         close(fd);
 
-        // Remover a tarefa ativa
         for (int i = index; i < active_count - 1; i++) {
             active_tasks[i] = active_tasks[i + 1];
             active_pids[i] = active_pids[i + 1];
         }
         active_count--;
 
-        // Verificar se há tarefas em espera e executar a próxima tarefa se houver espaço disponível
         if (waiting_count > 0 && active_count < MAX_TASKS) {
             Task next_task = dequeue_task();
             execute_task(next_task);
@@ -283,93 +255,66 @@ void remove_active_task(int index) {
     }
 }
 
-
-
-void monitor_active_tasks() {
-    // Enquanto o servidor estiver em execução
-    while (server_running) {
-        // Se houver tarefas ativas para monitorar
-        if (active_count > 0) {
-            // Aguardar 1 segundo antes de verificar novamente
-            sleep(1);
-
-            // Obter o tempo atual
-            struct timeval now;
-            gettimeofday(&now, NULL);
-
-            // Iterar sobre as tarefas ativas
-            for (int i = 0; i < active_count; i++) {
-                ActiveTask *active_task = &active_tasks[i];
-                
-                // Calcular o tempo de execução da tarefa
-                long execution_time = (now.tv_sec - active_task->start_time.tv_sec) * 1000 +
-                                      (now.tv_usec - active_task->start_time.tv_usec) / 1000;
-
-                // Se a tarefa excedeu o tempo estimado, removê-la da lista de tarefas ativas
-                if (execution_time >= active_task->task.estimated_time) {
-                    remove_active_task(i);
-                }
-            }
-        } else {
-            // Se não houver tarefas ativas, aguarde um pouco antes de verificar novamente
-            sleep(1);
-        }
-    }
-}
-
-
 void execute_task(Task task) {
-    // Criar processo filho para executar a tarefa
+    int pipe_fd[2];
+    if (pipe(pipe_fd) == -1) {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+
     pid_t pid = fork();
     if (pid == -1) {
         perror("fork");
         exit(EXIT_FAILURE);
     } else if (pid == 0) {
-        // Processo filho: executar o comando da tarefa
+        close(pipe_fd[0]); // Fecha a extremidade de leitura do pipe no processo filho
+
+        // Redireciona a saída padrão (stdout) para o pipe
+        if (dup2(pipe_fd[1], STDOUT_FILENO) == -1) {
+            perror("dup2");
+            exit(EXIT_FAILURE);
+        }
+
+        close(pipe_fd[1]); // Fecha a extremidade de escrita do pipe no processo filho
+
+        // Executa o comando da tarefa
         execlp("sh", "sh", "-c", task.command, NULL);
         perror("execlp");
-        exit(EXIT_FAILURE); // Em caso de falha na execução do comando
+        exit(EXIT_FAILURE);
     } else {
-        // Processo pai: adicionar tarefa à lista de tarefas ativas
+        close(pipe_fd[1]); // Fecha a extremidade de escrita do pipe no processo pai
+
         ActiveTask active_task = {.task = task, .pid = pid, .start_time = {0}};
         gettimeofday(&active_task.start_time, NULL);
         add_active_task(active_task);
-        printf("Nova tarefa iniciada: Task ID: %s, Command: %s, PID: %d\n", task.id, task.command, pid); // Apenas para debug
+        printf("Nova tarefa iniciada: Task ID: %s, Command: %s, PID: %d\n", task.id, task.command, pid);
+
+        close(pipe_fd[0]); // Fecha a extremidade de leitura do pipe no processo pai
     }
 }
 
-
-void monitor_tasks() {
-    // Enquanto o servidor estiver em execução
+void monitor_active_tasks() {
     while (server_running) {
-        // Se houver tarefas ativas para monitorar
+        usleep(100000); // Aguarda 100ms para verificar novamente
+
         if (active_count > 0) {
-            // Iterar sobre as tarefas ativas
             for (int i = 0; i < active_count; i++) {
-                int status;
-                pid_t pid = waitpid(active_pids[i], &status, WNOHANG);
-                if (pid == -1) {
-                    perror("waitpid");
-                    exit(EXIT_FAILURE);
-                } else if (pid > 0) {
-                    // Processo filho terminou
+                ActiveTask *active_task = &active_tasks[i];
+
+                struct timeval now;
+                gettimeofday(&now, NULL);
+                long execution_time = (now.tv_sec - active_task->start_time.tv_sec) * 1000 +
+                                      (now.tv_usec - active_task->start_time.tv_usec) / 1000;
+
+                if (execution_time >= active_task->task.estimated_time) {
                     remove_active_task(i);
                 }
             }
         }
-
-        // Se ainda houver tarefas na fila de espera e espaço para tarefas ativas
-        if (waiting_count > 0 && active_count < MAX_TASKS) {
-            Task next_task = dequeue_task();
-            execute_task(next_task);
-        }
-
-        // Aguarde um pouco antes de verificar novamente
-        sleep(1);
     }
 }
 
-int start_server() {
+void start_server(const char *output_folder, int parallel_tasks, const char *sched_policy) {
     setup_communication(FIFO_PATH);
     printf("Servidor iniciado.\n");
 
@@ -381,11 +326,9 @@ int start_server() {
     } else if (pid == 0) {
         // Este é o processo filho
         monitor_active_tasks();
-        monitor_tasks();
         exit(EXIT_SUCCESS);
     }
 
-    // Resto do código é o mesmo
     int fifo_fd = open(FIFO_PATH, O_RDONLY);
     if (fifo_fd == -1) {
         perror("open");
@@ -396,12 +339,13 @@ int start_server() {
     ssize_t num_read;
 
     while (1) {
+        // Verificar se há novas mensagens do cliente de forma assíncrona
         num_read = read(fifo_fd, buffer, sizeof(buffer) - 1);
         if (num_read == -1) {
             perror("read");
             continue;
         } else if (num_read == 0) {
-            continue; 
+            continue; // Nenhuma nova mensagem
         }
 
         buffer[num_read] = '\0'; // Terminar o buffer com nulo
@@ -428,14 +372,12 @@ int start_server() {
             long execution_time = (now.tv_sec - active_task->start_time.tv_sec) * 1000 +
                                   (now.tv_usec - active_task->start_time.tv_usec) / 1000;
             if (execution_time >= active_task->task.estimated_time) {
-                // Remover a tarefa ativa e movê-la para a lista de tarefas concluídas
                 remove_active_task(i);
             }
         }
     }
 
     close(fifo_fd);
-    return 0;
 }
 
 
