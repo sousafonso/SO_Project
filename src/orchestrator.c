@@ -39,9 +39,6 @@ Task *waiting_queue;
 ActiveTask *active_tasks;
 pid_t *active_pids;
 
-
-// pthread_mutex_t lock;
-
 void handle_status_command(int fifo_fd) {
     char status_message[4096] = "Tarefas em espera e ativas:\n";
 
@@ -77,14 +74,6 @@ void handle_status_command(int fifo_fd) {
         perror("write");
     }
 }
-
-// void add_active_task(ActiveTask active_task) {
-//     pthread_mutex_lock(&lock);
-//     active_tasks[active_count] = active_task;
-//     active_pids[active_count] = active_task.pid;
-//     active_count++;
-//     pthread_mutex_unlock(&lock);
-// }
 
 void add_active_task(ActiveTask active_task) {
     if (active_count >= MAX_TASKS) {
@@ -176,23 +165,6 @@ void save_state() {
     close(fd);
 }
 
-/*
-void enqueue_task(Task task) {
-    if (waiting_count >= MAX_TASKS) {
-        fprintf(stderr, "Fila de espera cheia. Tarefa %s não enfileirada.\n", task.id);
-        return;
-    }
-
-    waiting_queue[waiting_count++] = task;
-    save_state();
-
-    // Iniciar a tarefa se houver espaço e a fila de espera não estiver vazia
-    if (active_count < MAX_TASKS && waiting_count > 0) {
-        Task next_task = dequeue_task();
-        execute_task(next_task);
-    }
-}
-*/
 Task dequeue_task() {
     if (waiting_count == 0) {
         fprintf(stderr, "Fila de espera vazia.\n");
@@ -294,20 +266,19 @@ void remove_active_task(int index) {
         // Fechar o arquivo
         close(fd);
 
-        // Remover o PID correspondente
+        // Remover a tarefa ativa
         for (int i = index; i < active_count - 1; i++) {
+            active_tasks[i] = active_tasks[i + 1];
             active_pids[i] = active_pids[i + 1];
         }
+        active_count--;
 
-        if (waiting_count > 0) {
+        // Verificar se há tarefas em espera e executar a próxima tarefa se houver espaço disponível
+        if (waiting_count > 0 && active_count < MAX_TASKS) {
             Task next_task = dequeue_task();
             execute_task(next_task);
-        }    
-
-        if (index < active_count - 1) {
-            memmove(&active_tasks[index], &active_tasks[index + 1], (active_count - index - 1) * sizeof(ActiveTask));
         }
-        active_count--;
+
         save_state();
     }
 }
@@ -398,57 +369,6 @@ void monitor_tasks() {
     }
 }
 
-
-// int start_server() {
-//     setup_communication(FIFO_PATH);
-//     printf("Servidor iniciado.\n");
-
-//     // Iniciar uma thread para monitorar as tarefas ativas
-//     pthread_t monitor_thread;
-//     if (pthread_create(&monitor_thread, NULL, (void *(*)(void *))monitor_active_tasks, NULL) != 0) {
-//         perror("pthread_create");
-//         exit(EXIT_FAILURE);
-//     }
-    
-//     int fifo_fd = open(FIFO_PATH, O_RDONLY);
-//     if (fifo_fd == -1) {
-//         perror("open");
-//         exit(EXIT_FAILURE);
-//     }
-
-//     char buffer[1024];
-//     ssize_t num_read;
-
-//     while (1) {
-//         num_read = read(fifo_fd, buffer, sizeof(buffer) - 1);
-//         if (num_read == -1) {
-//             perror("read");
-//             continue;
-//         } else if (num_read == 0) {
-//             continue; 
-//         }
-
-//         buffer[num_read] = '\0'; // Terminar o buffer com nulo
-
-//         if (strcmp(buffer, "status") == 0) {
-//             int write_fd = open(FIFO_PATH, O_WRONLY);
-//             if (write_fd == -1) {
-//                 perror("open");
-//                 continue;
-//             }
-//             handle_status_command(write_fd);
-//             close(write_fd);
-//         } else {
-//             Task task;
-//             parse_client_request(buffer, &task);
-//             enqueue_task(task);
-//         }
-//     }
-
-//     close(fifo_fd);
-//     return 0;
-// }
-
 int start_server() {
     setup_communication(FIFO_PATH);
     printf("Servidor iniciado.\n");
@@ -461,6 +381,7 @@ int start_server() {
     } else if (pid == 0) {
         // Este é o processo filho
         monitor_active_tasks();
+        monitor_tasks();
         exit(EXIT_SUCCESS);
     }
 
