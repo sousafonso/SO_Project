@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
     sleep(1);
 
     // Abrir um novo terminal e executar o client com o comando status
-    system("gnome-terminal -- ./client execute 100 -u \"ls -l\"");
+    system("gnome-terminal -- ./client execute 1000 -u \"ls -l\"");
 
     // Aguardar 1 segundo para garantir que o client tenha iniciado
     sleep(1);
