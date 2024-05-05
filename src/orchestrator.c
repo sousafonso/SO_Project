@@ -30,7 +30,7 @@ ActiveTask *active_tasks;
 pid_t *active_pids;
 
 void handle_status_command(int fifo_fd) {
-    char status_message[4096] = "Tarefas em espera e ativas:\n";
+    char status_message[4096] = "Tarefas em espera, ativas e concluídas:\n";
 
     // Adicionar o status das tarefas em espera ao status_message
     strcat(status_message, "Tarefas em espera:\n");
