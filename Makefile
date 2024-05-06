@@ -1,28 +1,38 @@
 CC = gcc
-CFLAGS = -Wall -g -Iinclude $(shell pkg-config --cflags glib-2.0)
+CFLAGS = -Wall -g -Iinclude
 LDFLAGS = $(shell pkg-config --libs glib-2.0) -lm -lncurses
 OUTPUT_FOLDER = output
-PARALLEL_TASKS = 1
-SCHED_POLICY = fcfs
 
-all: server client
+all: orchestrator client test_script
 
-server: bin/orchestrator
+bin/orchestrator: orchestrator
 
-client: bin/client
+bin/client: client
+
+bin/test_script: test_script
 
 folders:
-    @mkdir -p src include obj bin $(OUTPUT_FOLDER)
+	@mkdir -p src includes obj bin $(OUTPUT_FOLDER)
 
-bin/orchestrator: obj/orchestrator.o obj/main.o
-    $(CC) $^ -o $@ $(LDFLAGS)
+orchestrator: obj/orchestrator.o | folders
+	$(CC) $^ -o $@ $(LDFLAGS)
 
-bin/client: obj/client.o obj/main.o
-    $(CC) $^ -o $@ $(LDFLAGS)
+client: obj/client.o | folders
+	$(CC) $^ -o $@ $(LDFLAGS)
 
-obj/%.o: src/%.c include/%.h | folders
-    $(CC) $(CFLAGS) -c $< -o $@
+test_script: obj/test_script.o | folders
+	$(CC) $^ -o $@ $(LDFLAGS)
+
+obj/%.o: src/%.c | folders
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-    rm -rf obj/* bin/* $(OUTPUT_FOLDER)/*
+	if [ -p $(FIFO_PATH) ]; then rm -f $(FIFO_PATH); fi
+	rm -r obj/ orchestrator client test_script output/ bin/ state.txt
+
+run: all
+	gnome-terminal
+
+test: all
+	gnome-terminal -- ./test_script	
 

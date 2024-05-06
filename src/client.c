@@ -2,86 +2,109 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
 #define FIFO_NAME "orchestrator_fifo"
+#define FIFO_PATH "/tmp/" FIFO_NAME
 
-void send_command_to_server(const char *command) {
-    int fd = open(FIFO_NAME, O_WRONLY);
-    if (fd == -1) {
-        perror("Falha ao abrir o pipe nomeado");
-        exit(EXIT_FAILURE);
+int check_fifo_exists(const char* fifo_path) {
+    struct stat st;
+    if (stat(fifo_path, &st) == -1) {
+        perror("stat");
+        printf("Certifique-se de que o orchestrator está rodando e criou o FIFO.\n");
+        return 0; // Retorna 0 se o FIFO não existir
     }
-
-    if (write(fd, command, strlen(command)) == -1) {
-        perror("Falha ao escrever no pipe nomeado");
-        exit(EXIT_FAILURE);
-    }
-
-    close(fd);
+    return 1; // Retorna 1 se o FIFO existir
 }
 
-int client(int argc, char *argv[]) {
-    if (argc < 4 || (strcmp(argv[1], "-u") != 0 && strcmp(argv[1], "-p") != 0)) {
-        fprintf(stderr, "Uso: %s [-u | -p] tempo_em_ms \"programa1 [args1] | programa2 [args2] | ...\"\n", argv[0]);
-        exit(EXIT_FAILURE);
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Usage: %s <command> [args]\n", argv[0]);
+        return 1;
     }
 
-    char fifo[256];
-    snprintf(fifo, sizeof(fifo), "%s", FIFO_NAME);
-
-    int fd = open(fifo, O_WRONLY);
-    if (fd == -1) {
-        perror("Falha ao abrir o pipe nomeado");
-        exit(EXIT_FAILURE);
+    if (!check_fifo_exists(FIFO_PATH)) {
+        return 1; // Encerra se o FIFO não existir
     }
 
-    char message[4096];
-    snprintf(message, sizeof(message), "%s %s %s", argv[1], argv[2], argv[3]);
-    for (int i = 3; i < argc; ++i) {
-        strncat(message, " ", sizeof(message) - strlen(message) - 1);
-        strncat(message, argv[i], sizeof(message) - strlen(message) - 1);
+    if (strcmp(argv[1], "status") == 0) {
+        // Open the FIFO for writing
+        int fifo_fd = open(FIFO_PATH, O_WRONLY);
+        if (fifo_fd == -1) {
+            perror("open");
+            return 1;
+        }
+
+        // Send the status request to the server via FIFO
+        char status_request[] = "status";
+        if (write(fifo_fd, status_request, strlen(status_request)) == -1) {
+            perror("write");
+            close(fifo_fd);
+            return 1;
+        }
+
+        // Close the FIFO
+        close(fifo_fd);
+
+        // Open the FIFO for reading
+        fifo_fd = open(FIFO_PATH, O_RDONLY);
+        if (fifo_fd == -1) {
+            perror("open");
+            return 1;
+        }
+
+        // Read the status response from the server
+        char status_response[1024];
+        if (read(fifo_fd, status_response, sizeof(status_response)) == -1) {
+            perror("read");
+            close(fifo_fd);
+            return 1;
+        }
+
+        // Close the FIFO
+        close(fifo_fd);
+
+        // Print the status response
+        printf("%s\n", status_response);
+
+        return 0;
     }
 
-    // if (write(fd, message, strlen(message)) == -1) {
-    //     perror("Falha ao escrever no pipe nomeado");
-    //     exit(EXIT_FAILURE);
-    // }
 
-    // printf("Tarefa submetida com sucesso.\n");
+    if (strcmp(argv[1], "execute") == 0) {
+        if (argc < 4) {
+        printf("Usage: %s execute time -u 'prog-a [args]'\n", argv[0]);
+        return 1;
+        }
 
-    // close(fd);
-    // exit(EXIT_SUCCESS);
+        // Open the FIFO for writing
+        int fifo_fd = open(FIFO_PATH, O_WRONLY);
+        if (fifo_fd == -1) {
+            perror("open");
+            return 1;
+        }
 
-    if (write(fd, message, strlen(message)) == -1) {
-    perror("Falha ao escrever no pipe nomeado");
-    close(fd);
-    exit(EXIT_FAILURE);
+        // Send the execute request to the server via FIFO
+        char execute_request[1024];
+        snprintf(execute_request, sizeof(execute_request), "%s %s %s \"%s\"", argv[1], argv[2], argv[3], argv[4]);
+        if (write(fifo_fd, execute_request, strlen(execute_request)) == -1) {
+            perror("write");
+            close(fifo_fd);
+            return 1;
+        }
+
+        // Close the FIFO
+        close(fifo_fd);
+
+        printf("Task submitted successfully.\n");
+
+        return 0;
     }
 
-    close(fd);
-
-    // Aguardar resposta do servidor
-    fd = open(fifo, O_RDONLY);
-    if (fd == -1) {
-        perror("Falha ao abrir o pipe nomeado para leitura");
-        exit(EXIT_FAILURE);
-    }
-
-    char response[1024];
-    int nbytes = read(fd, response, sizeof(response) - 1);
-    if (nbytes > 0) {
-        response[nbytes] = '\0'; // Garante que a string é terminada corretamente
-        printf("Resposta do servidor: %s\n", response);
-    } else {
-        perror("Falha ao ler resposta do servidor");
-    }
-
-    close(fd);
-    exit(EXIT_SUCCESS);
-
+    printf("Invalid command '%s'. Supported commands: status, execute.\n", argv[1]);
+    return 1;
 }
 
