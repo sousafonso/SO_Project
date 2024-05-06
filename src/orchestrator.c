@@ -69,7 +69,7 @@ void handle_status_command(int fifo_fd) {
 
 void add_active_task(ActiveTask active_task) {
     if (active_count >= MAX_TASKS) {
-        fprintf(stderr, "Número máximo de tarefas ativas atingido.\n");
+        printf("Número máximo de tarefas ativas atingido.\n");
         return;
     }
 
@@ -90,7 +90,7 @@ void setup_communication(const char *fifo_name) {
 
 void parse_client_request(const char *buffer, Task *task) {
     if (buffer == NULL || task == NULL) {
-        fprintf(stderr, "Erro: buffer ou task não podem ser nulos.\n");
+        printf("Erro: buffer ou task não podem ser nulos.\n");
         return;
     }
 
@@ -101,7 +101,7 @@ void parse_client_request(const char *buffer, Task *task) {
     // Primeiro tenta ler a palavra "execute" e o tempo estimado
     int num_args_scanned = sscanf(buffer, "%7s %d %2s", execute_keyword, &task->estimated_time, time_keyword);
     if (num_args_scanned != 3 || strcmp(execute_keyword, "execute") != 0 || (strcmp(time_keyword, "-u") != 0 && strcmp(time_keyword, "-p") != 0)) {
-        fprintf(stderr, "Erro: comando inválido ou tempo estimado ausente.\n");
+        printf("Erro: comando inválido ou tempo estimado ausente.\n");
         return;
     }
 
@@ -110,14 +110,14 @@ void parse_client_request(const char *buffer, Task *task) {
     buffer = strchr(buffer + 1, ' ');
     buffer = strchr(buffer + 1, ' ');
     if (!buffer) {
-        fprintf(stderr, "Erro: formato de comando inválido.\n");
+        printf("Erro: formato de comando inválido.\n");
         return;
     }
     buffer++;
 
     // Agora, tenta ler o comando entre aspas
     if (sscanf(buffer, "\"%[^\"]\"", command_buffer) != 1) {
-        fprintf(stderr, "Erro: comando ausente ou não entre aspas.\n");
+        printf("Erro: comando ausente ou não entre aspas.\n");
         return;
     }
 
@@ -159,7 +159,7 @@ void save_state() {
 
 Task dequeue_task() {
     if (waiting_count == 0) {
-        fprintf(stderr, "Fila de espera vazia.\n");
+        printf("Fila de espera vazia.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -179,7 +179,7 @@ void enqueue_task(Task task) {
 
     char *new_id = (char *)malloc(id_length);
     if (new_id == NULL) {
-        fprintf(stderr, "Erro: falha ao alocar memória para o ID da tarefa.\n");
+        printf("Erro: falha ao alocar memória para o ID da tarefa.\n");
         exit(EXIT_FAILURE);
     }
     snprintf(new_id, id_length, "%d", task_counter);
@@ -203,7 +203,7 @@ void enqueue_task(Task task) {
             }
             waiting_queue[insert_index] = task;
             waiting_count++;
-            fprintf(stderr, "Tarefa %s enfileirada para espera.\n", task.id);
+            printf("Tarefa %s enfileirada para espera.\n", task.id);
             save_state();
         }
     }
@@ -211,7 +211,7 @@ void enqueue_task(Task task) {
 
 void remove_active_task(int index) {
     if (index < 0 || index >= active_count) {
-        fprintf(stderr, "Índice de tarefa ativa inválido.\n");
+        printf("Índice de tarefa ativa inválido.\n");
         return;
     }
 
@@ -383,7 +383,7 @@ void start_server(const char *output_folder, int parallel_tasks, const char *sch
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        fprintf(stderr, "Uso: %s output_folder parallel_tasks sched_policy\n", argv[0]);
+        printf("Uso: %s output_folder parallel_tasks sched_policy\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
@@ -394,19 +394,19 @@ int main(int argc, char *argv[]) {
     // Verifique se output_folder é um diretório válido
     struct stat s;
     if (stat(output_folder, &s) != 0 || !S_ISDIR(s.st_mode)) {
-        fprintf(stderr, "Erro: %s não é um diretório válido.\n", output_folder);
+        printf("Erro: %s não é um diretório válido.\n", output_folder);
         exit(EXIT_FAILURE);
     }
 
     // Verifique se parallel_tasks é um número válido
     if (parallel_tasks <= 0) {
-        fprintf(stderr, "Erro: parallel_tasks deve ser um número maior que 0.\n");
+        printf("Erro: parallel_tasks deve ser um número maior que 0.\n");
         exit(EXIT_FAILURE);
     }
 
     // Verifique se sched_policy é uma política de escalonamento válida
     if (strcmp(sched_policy, "FIFO") != 0 && strcmp(sched_policy, "RR") != 0) {
-        fprintf(stderr, "Erro: sched_policy deve ser 'FIFO' ou 'RR'.\n");
+        printf("Erro: sched_policy deve ser 'FIFO' ou 'RR'.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -422,7 +422,7 @@ int main(int argc, char *argv[]) {
 
     // Verifique se a alocação de memória foi bem-sucedida
     if (task_start_times == NULL || completed_tasks == NULL || waiting_queue == NULL || active_tasks == NULL || active_pids == NULL) {
-        fprintf(stderr, "Erro: falha ao alocar memória para os arrays dinâmicos.\n");
+        printf("Erro: falha ao alocar memória para os arrays dinâmicos.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -438,3 +438,4 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+

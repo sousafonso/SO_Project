@@ -29,8 +29,5 @@ int main(int argc, char *argv[]) {
      // Aguardar 2 segundos para garantir que o client tenha iniciado
     sleep(1);
 
-    // Usar expect para enviar uma pressão de tecla "Enter" para o client
-//    system("expect -c 'spawn -noecho ./client status; send \"\\r\"; interact'");
-
     return 0;
 }

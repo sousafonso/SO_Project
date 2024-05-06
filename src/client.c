@@ -14,7 +14,7 @@ int check_fifo_exists(const char* fifo_path) {
     struct stat st;
     if (stat(fifo_path, &st) == -1) {
         perror("stat");
-        fprintf(stderr, "Certifique-se de que o orchestrator está rodando e criou o FIFO.\n");
+        printf("Certifique-se de que o orchestrator está rodando e criou o FIFO.\n");
         return 0; // Retorna 0 se o FIFO não existir
     }
     return 1; // Retorna 1 se o FIFO existir
@@ -22,7 +22,7 @@ int check_fifo_exists(const char* fifo_path) {
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <command> [args]\n", argv[0]);
+        printf("Usage: %s <command> [args]\n", argv[0]);
         return 1;
     }
 
@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
 
     if (strcmp(argv[1], "execute") == 0) {
         if (argc < 4) {
-        fprintf(stderr, "Usage: %s execute time -u 'prog-a [args]'\n", argv[0]);
+        printf("Usage: %s execute time -u 'prog-a [args]'\n", argv[0]);
         return 1;
         }
 
@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    fprintf(stderr, "Invalid command '%s'. Supported commands: status, execute.\n", argv[1]);
+    printf("Invalid command '%s'. Supported commands: status, execute.\n", argv[1]);
     return 1;
 }
 
